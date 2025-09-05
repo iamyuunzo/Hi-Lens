@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RegWatch - 규제 모니터링 시스템</title>
+  
+  <!-- Pretendard 폰트 -->
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/variable/pretendardvariable.css" />
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  
+  <style>
+    :root {
+      --primary-orange: #dc8d32;
+      --primary-blue: #0f2e69;
+    }
+    
+    * {
+      font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    }
+    
+    body {
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      min-height: 100vh;
+    }
+    
+    .glass-effect {
+      background: rgba(255, 255, 255, 0.25);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+    
+    .card-hover {
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    
+    .card-hover:hover {
+      transform: translateY(-8px) scale(1.02);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+    
+    .badge-new {
+      background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+      animation: pulse-glow 2s infinite;
+      box-shadow: 0 0 20px rgba(255, 107, 107, 0.4);
+    }
+    
+    .primary-btn {
+      background: linear-gradient(135deg, var(--primary-blue), #1e40af);
+      box-shadow: 0 4px 15px rgba(15, 46, 105, 0.3);
+      transition: all 0.3s ease;
+    }
+    
+    .primary-btn:hover {
+      background: linear-gradient(135deg, #1e40af, var(--primary-blue));
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(15, 46, 105, 0.4);
+    }
+    
+    .secondary-btn {
+      background: linear-gradient(135deg, var(--primary-orange), #f59e0b);
+      box-shadow: 0 4px 15px rgba(220, 141, 50, 0.3);
+      transition: all 0.3s ease;
+    }
+    
+    .secondary-btn:hover {
+      background: linear-gradient(135deg, #f59e0b, var(--primary-orange));
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(220, 141, 50, 0.4);
+    }
+    
+    @keyframes pulse-glow {
+      0%, 100% { 
+        opacity: 1; 
+        box-shadow: 0 0 20px rgba(255, 107, 107, 0.4);
+      }
+      50% { 
+        opacity: 0.8; 
+        box-shadow: 0 0 30px rgba(255, 107, 107, 0.6);
+      }
+    }
+    
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .fade-in-up {
+      animation: fadeInUp 0.6s ease-out;
+    }
+    
+    .filter-btn {
+      background: white;
+      border: 2px solid #e5e7eb;
+      color: #6b7280;
+      padding: 8px 16px;
+      border-radius: 25px;
+      transition: all 0.3s ease;
+      font-weight: 500;
+    }
+    
+    .filter-btn:hover {
+      border-color: var(--primary-blue);
+      color: var(--primary-blue);
+      transform: translateY(-1px);
+    }
+    
+    .filter-btn.active {
+      background: linear-gradient(135deg, var(--primary-blue), #1e40af);
+      border-color: var(--primary-blue);
+      color: white;
+      box-shadow: 0 4px 15px rgba(15, 46, 105, 0.3);
+    }
+    
+    .search-input {
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(10px);
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      transition: all 0.3s ease;
+    }
+    
+    .search-input:focus {
+      background: white;
+      border-color: var(--primary-blue);
+      box-shadow: 0 0 0 3px rgba(15, 46, 105, 0.1);
+    }
+    
+    /* 모달 스타일 */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.5);
+      backdrop-filter: blur(5px);
+    }
+    
+    .modal.show {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .modal-content {
+      background: white;
+      margin: 5% auto;
+      padding: 0;
+      border-radius: 20px;
+      width: 90%;
+      max-width: 800px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+    
+    .modal-header {
+      background: linear-gradient(135deg, var(--primary-blue), #1e40af);
+      color: white;
+      padding: 20px 30px;
+      border-radius: 20px 20px 0 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .modal-body {
+      padding: 30px;
+      line-height: 1.7;
+    }
+    
+    .modal-body h2 {
+      color: var(--primary-blue);
+      font-size: 1.5rem;
+      font-weight: bold;
+      margin-bottom: 1rem;
+    }
+    
+    .modal-body h3 {
+      color: var(--primary-blue);
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin: 1.5rem 0 0.8rem 0;
+    }
+    
+    .modal-body ul {
+      margin: 1rem 0;
+      padding-left: 1.5rem;
+    }
+    
+    .modal-body li {
+      margin-bottom: 0.5rem;
+    }
+    
+    .close {
+      color: white;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    
+    .close:hover {
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="glass-effect sticky top-0 z-50">
+    <div class="container mx-auto px-6 py-6">
+      <div class="flex justify-between items-center">
+        <div class="flex items-center space-x-4">
+          <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center">
+            <i data-lucide="shield-check" class="w-6 h-6 text-white"></i>
+          </div>
+          <div>
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">
+              RegWatch
+            </h1>
+            <p class="text-gray-600 text-sm">글로벌 규제 변경사항을 실시간으로 모니터링합니다</p>
+          </div>
+        </div>
+        
+        <div class="flex items-center space-x-4">
+          <div class="hidden md:flex items-center space-x-6 text-sm text-gray-600">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="globe" class="w-4 h-4"></i>
+              <span>5개 기관</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <i data-lucide="clock" class="w-4 h-4"></i>
+              <span id="lastUpdate">9월 4일, 오후 1:32</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <i data-lucide="database" class="w-4 h-4"></i>
+              <span id="totalCards">총 6개</span>
+            </div>
+          </div>
+          
+          <div class="flex space-x-3">
+            <button 
+              onclick="manualUpdate()" 
+              id="updateBtn"
+              class="primary-btn text-white px-6 py-3 rounded-xl font-medium flex items-center space-x-2"
+            >
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+              <span>업데이트</span>
+            </button>
+            <button 
+              onclick="showAllCards()" 
+              class="secondary-btn text-white px-6 py-3 rounded-xl font-medium flex items-center space-x-2"
+            >
+              <i data-lucide="refresh-ccw" class="w-4 h-4"></i>
+              <span>새로고침</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Search & Filters -->
+  <section class="container mx-auto px-6 py-8">
+    <!-- Search Bar -->
+    <div class="mb-8">
+      <div class="relative max-w-2xl mx-auto">
+        <input 
+          type="text" 
+          id="searchInput"
+          placeholder="규제명, 키워드, 기관명으로 검색하세요..."
+          class="search-input w-full pl-12 pr-4 py-4 rounded-2xl text-lg focus:outline-none"
+          onkeyup="handleSearch()"
+        >
+        <i data-lucide="search" class="w-6 h-6 text-gray-400 absolute left-4 top-1/2 transform -translate-y-1/2"></i>
+      </div>
+    </div>
+    
+    <!-- Category Filters -->
+    <div class="glass-effect rounded-2xl p-6">
+      <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+        <i data-lucide="tag" class="w-5 h-5 mr-2 text-blue-600"></i>
+        카테고리
+      </h3>
+      <div class="flex flex-wrap gap-3">
+        <button onclick="filterCategory('전체')" class="filter-btn active" data-category="전체">전체</button>
+        <button onclick="filterCategory('환경정책')" class="filter-btn" data-category="환경정책">환경정책</button>
+        <button onclick="filterCategory('화학규제')" class="filter-btn" data-category="화학규제">화학규제</button>
+        <button onclick="filterCategory('무역정책')" class="filter-btn" data-category="무역정책">무역정책</button>
+        <button onclick="filterCategory('산업정책')" class="filter-btn" data-category="산업정책">산업정책</button>
+        <button onclick="filterCategory('환경규제')" class="filter-btn" data-category="환경규제">환경규제</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content -->
+  <main class="container mx-auto px-6 pb-12">
+    <!-- Update Status -->
+    <div id="updateStatus" class="hidden mb-8 glass-effect rounded-2xl p-6 border-l-6 border-green-500">
+      <div class="flex items-center space-x-3 text-green-800">
+        <i data-lucide="check-circle" class="w-6 h-6"></i>
+        <span id="updateMessage" class="font-medium">업데이트 완료</span>
+      </div>
+    </div>
+
+    <!-- Cards Container -->
+    <div id="cardsContainer" class="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+      <!-- 카드들이 여기에 동적으로 생성됩니다 -->
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="hidden text-center py-16">
+      <div class="w-24 h-24 mx-auto mb-6 bg-gradient-to-br from-gray-200 to-gray-300 rounded-full flex items-center justify-center">
+        <i data-lucide="search-x" class="w-12 h-12 text-gray-500"></i>
+      </div>
+      <h3 class="text-2xl font-bold text-gray-700 mb-4">검색 결과가 없습니다</h3>
+      <p class="text-gray-500 text-lg">다른 키워드로 검색해보시거나 필터를 조정해보세요.</p>
+    </div>
+  </main>
+
+  <!-- 원문 보기 모달 -->
+  <div id="articleModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalTitle">기사 제목</h2>
+        <span class="close" onclick="closeModal()">&times;</span>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- 기사 내용이 여기에 표시됩니다 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="glass-effect mt-16">
+    <div class="container mx-auto px-6 py-12">
+      <div class="grid gap-8 md:grid-cols-4">
+        <div>
+          <div class="flex items-center space-x-3 mb-4">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center">
+              <i data-lucide="shield-check" class="w-4 h-4 text-white"></i>
+            </div>
+            <h4 class="font-bold text-gray-900">RegWatch</h4>
+          </div>
+          <p class="text-gray-600 text-sm leading-relaxed">
+            글로벌 규제 변경사항을 실시간으로 모니터링하여 
+            비즈니스 의사결정을 지원합니다.
+          </p>
+        </div>
+        
+        <div>
+          <h4 class="font-bold text-gray-900 mb-4">모니터링 기관</h4>
+          <ul class="space-y-2 text-sm text-gray-600">
+            <li class="flex items-center space-x-2">
+              <div class="w-2 h-2 rounded-full bg-blue-600"></div>
+              <span>독일 연방 환경부</span>
+            </li>
+            <li class="flex items-center space-x-2">
+              <div class="w-2 h-2 rounded-full bg-orange-500"></div>
+              <span>유럽 화학물질청</span>
+            </li>
+            <li class="flex items-center space-x-2">
+              <div class="w-2 h-2 rounded-full bg-blue-600"></div>
+              <span>미국 관세청</span>
+            </li>
+            <li class="flex items-center space-x-2">
+              <div class="w-2 h-2 rounded-full bg-orange-500"></div>
+              <span>한국 산업통상자원부</span>
+            </li>
+            <li class="flex items-center space-x-2">
+              <div class="w-2 h-2 rounded-full bg-blue-600"></div>
+              <span>미국 환경보호청</span>
+            </li>
+          </ul>
+        </div>
+        
+        <div>
+          <h4 class="font-bold text-gray-900 mb-4">주요 카테고리</h4>
+          <ul class="space-y-2 text-sm text-gray-600">
+            <li>환경 정책</li>
+            <li>화학물질 규제</li>
+            <li>무역 정책</li>
+            <li>산업 정책</li>
+            <li>환경 규제</li>
+          </ul>
+        </div>
+        
+        <div>
+          <h4 class="font-bold text-gray-900 mb-4">시스템 정보</h4>
+          <ul class="space-y-2 text-sm text-gray-600">
+            <li>자동 업데이트: 하루 2회</li>
+            <li>AI 분석: Potens.AI</li>
+            <li>실시간 모니터링</li>
+            <li>다국가 규제 추적</li>
+          </ul>
+        </div>
+      </div>
+      
+      <div class="border-t border-gray-200 mt-8 pt-8 text-center">
+        <p class="text-gray-500 text-sm">
+          &copy; 2024 RegWatch. Powered by Potens.AI | 
+          <span class="text-blue-600">실시간 글로벌 규제 모니터링 시스템</span>
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // 전역 변수
+    let allCards = [];
+    let currentFilter = { category: '전체' };
+    
+    // 즉시 표시할 샘플 데이터
+    const sampleCards = [
+      {
+        id: 'card_001',
+        title: 'EU 탄소국경조정메커니즘(CBAM) 2024년 본격 시행',
+        category: '환경정책',
+        summary: 'EU가 2024년부터 본격 시행하는 탄소국경조정메커니즘의 세부 시행령을 발표했습니다. 철강, 시멘트, 알루미늄 등 탄소집약적 산업의 수입품에 대해 탄소비용을 부과하여 탄소 누출을 방지하고 EU 내 기업의 경쟁력을 보호합니다.',
+        mainChanges: '탄소 배출량 증명서 제출 의무화, 탄소가격 차이만큼 CBAM 인증서 구매 필요, 2026년부터 금융적 의무 본격 시행, 분기별 보고 의무',
+        effectiveDate: '2024-01-01',
+        sourceUrl: '#',
+        lastUpdated: '2025-09-04',
+        sourceAgency: '유럽 화학물질청',
+        country: 'EU',
+        keywords: 'CBAM, 탄소국경조정, 탄소배출, 철강, 시멘트',
+        impactScope: '철강, 시멘트, 알루미늄, 비료, 전력 수입업체',
+        status: 'EFFECTIVE',
+        isNew: true,
+        fullContent: `
+          <h2>EU 탄소국경조정메커니즘(CBAM) 2024년 본격 시행</h2>
+          
+          <p><strong>발표일:</strong> 2024년 1월 1일<br>
+          <strong>발표기관:</strong> 유럽 화학물질청 (ECHA)<br>
+          <strong>시행일:</strong> 2024년 1월 1일 (전환기간), 2026년 1월 1일 (본격 시행)</p>
+          
+          <h3>개요</h3>
+          <p>유럽연합(EU)이 기후변화 대응과 탄소 누출 방지를 위해 도입한 탄소국경조정메커니즘(Carbon Border Adjustment Mechanism, CBAM)이 2024년부터 본격 시행됩니다. 이는 EU 외부에서 생산된 탄소집약적 제품의 수입 시 탄소비용을 부과하는 제도입니다.</p>
+          
+          <h3>주요 내용</h3>
+          <ul>
+            <li><strong>적용 대상:</strong> 철강, 시멘트, 비료, 알루미늄, 전력, 수소 등 6개 분야</li>
+            <li><strong>의무사항:</strong> 수입업체는 제품의 탄소 배출량을 증명하고 CBAM 인증서를 구매해야 함</li>
+            <li><strong>전환기간:</strong> 2024-2025년은 보고만 의무, 2026년부터 금융적 의무 시행</li>
+            <li><strong>보고 주기:</strong> 분기별 보고서 제출 의무</li>
+          </ul>
+          
+          <h3>영향 및 대응방안</h3>
+          <p>이 제도는 EU로 수출하는 한국, 중국, 인도 등의 기업들에게 직접적인 영향을 미칠 예정입니다. 기업들은 생산 과정에서의 탄소 배출량을 정확히 측정하고 관리할 수 있는 시스템을 구축해야 합니다.</p>
+          
+          <h3>향후 전망</h3>
+          <p>CBAM은 글로벌 탄소가격제의 확산을 촉진할 것으로 예상되며, 다른 국가들도 유사한 제도 도입을 검토하고 있어 국제 무역 질서에 큰 변화를 가져올 것으로 전망됩니다.</p>
+        `
+      },
+      {
+        id: 'card_002',
+        title: '독일 재생에너지법(EEG) 2024 개정 - 태양광 발전 지원 확대',
+        category: '환경정책',
+        summary: '독일 정부가 2030년 재생에너지 목표 달성을 위해 태양광 발전 지원을 대폭 확대하는 EEG 개정안을 발표했습니다. 기후 목표 달성과 에너지 독립성 강화를 위한 핵심 정책입니다.',
+        mainChanges: '태양광 발전 지원단가 15% 인상, 설치 허가 절차 간소화, 옥상 태양광 의무 설치 대상 확대, 농업용 태양광 인센티브 신설',
+        effectiveDate: '2024-04-01',
+        sourceUrl: '#',
+        lastUpdated: '2025-09-03',
+        sourceAgency: '독일 연방 환경부',
+        country: '독일',
+        keywords: '재생에너지, 태양광, EEG, 발전지원',
+        impactScope: '태양광 발전사업자, 건물 소유주, 에너지 기업',
+        status: 'ANNOUNCED',
+        isNew: true,
+        fullContent: `
+          <h2>독일 재생에너지법(EEG) 2024 개정안</h2>
+          
+          <p><strong>발표일:</strong> 2024년 4월 1일<br>
+          <strong>발표기관:</strong> 독일 연방 환경부<br>
+          <strong>시행일:</strong> 2024년 4월 1일</p>
+          
+          <h3>개요</h3>
+          <p>독일 정부가 2030년까지 재생에너지 비중을 80%로 확대하기 위한 재생에너지법(Erneuerbare-Energien-Gesetz, EEG) 개정안을 발표했습니다. 특히 태양광 발전 분야에 대한 지원을 대폭 확대합니다.</p>
+          
+          <h3>주요 변경사항</h3>
+          <ul>
+            <li><strong>지원단가 인상:</strong> 태양광 발전 지원단가를 평균 15% 인상</li>
+            <li><strong>허가 절차 간소화:</strong> 설치 허가 기간을 기존 6개월에서 3개월로 단축</li>
+            <li><strong>의무 설치 확대:</strong> 상업용 건물뿐만 아니라 주거용 신축 건물에도 태양광 패널 설치 의무화</li>
+            <li><strong>농업용 인센티브:</strong> 농업과 태양광 발전을 결합한 '농업태양광'에 대한 특별 인센티브 도입</li>
+          </ul>
+          
+          <h3>투자 계획</h3>
+          <p>독일 정부는 이번 개정안을 통해 향후 5년간 총 500억 유로를 태양광 발전 분야에 투자할 계획입니다. 이를 통해 2030년까지 태양광 발전 용량을 현재의 3배인 215GW까지 확대할 예정입니다.</p>
+          
+          <h3>기대 효과</h3>
+          <p>이번 개정안으로 독일의 연간 태양광 발전 설치량이 현재 7GW에서 22GW로 증가할 것으로 예상됩니다. 또한 약 50만 개의 새로운 일자리 창출 효과도 기대됩니다.</p>
+        `
+      },
+      {
+        id: 'card_003',
+        title: '미국 EPA 화학물질 안전성 강화법 시행',
+        category: '화학규제',
+        summary: '미국 환경보호청이 화학물질의 안전성 평가를 강화하고 유해 화학물질 사용을 제한하는 새로운 규제를 시행합니다. PFAS 등 영구 화학물질에 대한 규제가 핵심입니다.',
+        mainChanges: '연간 25톤 이상 생산 화학물질 안전성 데이터 제출 의무, 발암성 의심 물질 사전 승인제 도입, PFAS 화학물질 단계적 사용 금지',
+        effectiveDate: '2024-06-01',
+        sourceUrl: '#',
+        lastUpdated: '2025-09-04',
+        sourceAgency: '미국 환경보호청',
+        country: '미국',
+        keywords: '화학물질, 안전성평가, EPA, PFAS',
+        impactScope: '화학제품 제조업체, 수입업체',
+        status: 'EFFECTIVE',
+        isNew: false,
+        fullContent: `
+          <h2>미국 EPA 화학물질 안전성 강화법</h2>
+          
+          <p><strong>발표일:</strong> 2024년 6월 1일<br>
+          <strong>발표기관:</strong> 미국 환경보호청 (EPA)<br>
+          <strong>시행일:</strong> 2024년 6월 1일</p>
+          
+          <h3>배경</h3>
+          <p>미국 환경보호청(EPA)이 국민 건강 보호와 환경 안전을 위해 화학물질에 대한 규제를 대폭 강화했습니다. 특히 PFAS(과불화화합물) 등 '영원한 화학물질'로 불리는 유해 물질에 대한 규제가 핵심입니다.</p>
+          
+          <h3>주요 규제 내용</h3>
+          <ul>
+            <li><strong>안전성 데이터 제출 의무:</strong> 연간 25톤 이상 생산하는 모든 화학물질에 대해 독성, 생태독성, 환경 운명 등 포괄적 안전성 데이터 제출</li>
+            <li><strong>사전 승인제:</strong> 발암성, 변이원성, 생식독성이 의심되는 화학물질은 시장 출시 전 EPA의 사전 승인 필요</li>
+            <li><strong>PFAS 단계적 금지:</strong> 2025년부터 비필수 용도의 PFAS 사용 금지, 2027년부터 전면 금지</li>
+            <li><strong>정기 재평가:</strong> 기존 승인된 화학물질도 5년마다 안전성 재평가 실시</li>
+          </ul>
+          
+          <h3>기업 대응 방안</h3>
+          <p>화학 제조업체들은 새로운 규제에 대응하기 위해 다음과 같은 준비가 필요합니다:</p>
+          <ul>
+            <li>화학물질 인벤토리 재점검 및 안전성 데이터 확보</li>
+            <li>PFAS 대체 물질 연구개발 투자 확대</li>
+            <li>규제 준수를 위한 내부 관리 시스템 구축</li>
+          </ul>
+          
+          <h3>시장 영향</h3>
+          <p>이번 규제로 미국 화학 산업에 연간 약 150억 달러의 비용이 발생할 것으로 추산되지만, 장기적으로는 더 안전한 화학물질 개발을 촉진하여 산업 경쟁력 강화에 기여할 것으로 예상됩니다.</p>
+        `
+      },
+      {
+        id: 'card_004',
+        title: '한국 그린뉴딜 2.0 - 수소경제 활성화 지원책 발표',
+        category: '산업정책',
+        summary: '산업통상자원부가 수소경제 생태계 구축을 위한 대규모 투자 계획과 지원 정책을 발표했습니다. 2030년까지 수소 경제 선도국가로 도약하기 위한 종합 계획입니다.',
+        mainChanges: '수소 생산·저장·활용 전 분야 20조원 투자, 수소충전소 1,000개소 구축, 수소차 보조금 확대, 그린수소 생산 의무화',
+        effectiveDate: '2024-03-01',
+        sourceUrl: '#',
+        lastUpdated: '2025-09-02',
+        sourceAgency: '한국 산업통상자원부',
+        country: '한국',
+        keywords: '수소경제, 그린뉴딜, 수소차, 수소충전소',
+        impactScope: '수소 관련 기업, 자동차 제조업체, 에너지 기업',
+        status: 'ANNOUNCED',
+        isNew: false,
+        fullContent: `
+          <h2>한국 그린뉴딜 2.0 - 수소경제 활성화 지원책</h2>
+          
+          <p><strong>발표일:</strong> 2024년 3월 1일<br>
+          <strong>발표기관:</strong> 산업통상자원부<br>
+          <strong>시행일:</strong> 2024년 3월 1일</p>
+          
+          <h3>정책 배경</h3>
+          <p>한국 정부가 2030년 국가온실가스감축목표(NDC) 달성과 2050년 탄소중립 실현을 위해 수소경제 활성화를 핵심 전략으로 설정했습니다. 이번 지원책은 수소 생산부터 활용까지 전 밸류체인을 아우르는 종합적인 정책입니다.</p>
+          
+          <h3>주요 투자 계획</h3>
+          <ul>
+            <li><strong>총 투자 규모:</strong> 2030년까지 20조원 (정부 8조원, 민간 12조원)</li>
+            <li><strong>그린수소 생산:</strong> 2030년까지 연간 100만톤 생산 체계 구축</li>
+            <li><strong>수소충전소:</strong> 전국 1,000개소 구축 (현재 150개소에서 대폭 확대)</li>
+            <li><strong>수소차 보급:</strong> 승용차 85만대, 상용차 20만대 보급 목표</li>
+          </ul>
+          
+          <h3>핵심 지원 정책</h3>
+          <ul>
+            <li><strong>수소차 구매 지원:</strong> 승용차 최대 690만원, 버스 최대 4,000만원 보조금</li>
+            <li><strong>그린수소 의무화:</strong> 2030년부터 수소 공급량의 50% 이상을 그린수소로 의무화</li>
+            <li><strong>수소 전용 항만:</strong> 부산, 울산, 여수에 수소 전용 항만 구축</li>
+            <li><strong>R&D 투자:</strong> 수소 핵심기술 개발에 5년간 2조원 투자</li>
+          </ul>
+          
+          <h3>기대 효과</h3>
+          <p>이번 정책으로 2030년까지 수소경제 시장 규모를 30조원으로 확대하고, 관련 일자리 15만개를 창출할 계획입니다. 또한 연간 2,700만톤의 온실가스 감축 효과도 기대됩니다.</p>
+          
+          <h3>국제 협력</h3>
+          <p>한국은 호주, 사우디아라비아 등과 그린수소 도입을 위한 국제 협력도 강화하여 안정적인 수소 공급망을 구축할 예정입니다.</p>
+        `
+      },
+      {
+        id: 'card_005',
+        title: '미국 관세청 ESG 공급망 실사 의무화',
+        category: '무역정책',
+        summary: '미국 관세청이 일정 규모 이상의 수입업체에 대해 ESG 기준에 따른 공급망 실사를 의무화한다고 발표했습니다. 강제노동 근절과 지속가능한 공급망 구축이 목표입니다.',
+        mainChanges: '연간 수입액 1억 달러 이상 기업 ESG 실사 보고서 제출 의무, 아동노동·강제노동 관련 제품 수입 금지 강화, 공급망 투명성 확대',
+        effectiveDate: '2024-08-01',
+        sourceUrl: '#',
+        lastUpdated: '2025-09-03',
+        sourceAgency: '미국 관세청',
+        country: '미국',
+        keywords: 'ESG, 공급망실사, 아동노동, 강제노동',
+        impactScope: '대규모 수입업체, 글로벌 제조업체',
+        status: 'DRAFT',
+        isNew: true,
+        fullContent: `
+          <h2>미국 관세청 ESG 공급망 실사 의무화</h2>
+          
+          <p><strong>발표일:</strong> 2024년 8월 1일<br>
+          <strong>발표기관:</strong> 미국 관세청 (CBP)<br>
+          <strong>시행일:</strong> 2024년 8월 1일 (단계적 시행)</p>
+          
+          <h3>정책 배경</h3>
+          <p>미국 정부가 글로벌 공급망에서의 인권 침해와 환경 파괴를 방지하기 위해 ESG(환경·사회·지배구조) 기준에 따른 공급망 실사를 의무화했습니다. 이는 위구르족 강제노동 방지법에 이은 후속 조치입니다.</p>
+          
+          <h3>적용 대상 및 기준</h3>
+          <ul>
+            <li><strong>적용 대상:</strong> 연간 수입액 1억 달러 이상인 수입업체</li>
+            <li><strong>적용 품목:</strong> 의류, 전자제품, 농산물, 광물 등 고위험 품목 우선 적용</li>
+            <li><strong>실사 범위:</strong> 1차 공급업체부터 원재료 공급업체까지 전체 공급망</li>
+          </ul>
+          
+          <h3>주요 의무사항</h3>
+          <ul>
+            <li><strong>실사 보고서:</strong> 연 2회 공급망 ESG 실사 보고서 제출</li>
+            <li><strong>인증 시스템:</strong> 제3자 인증기관을 통한 공급망 검증</li>
+            <li><strong>위험 관리:</strong> 고위험 공급업체에 대한 개선 계획 수립 및 이행</li>
+            <li><strong>투명성 확보:</strong> 주요 공급업체 정보 공개</li>
+          </ul>
+          
+          <h3>제재 조치</h3>
+          <p>의무를 위반한 기업에 대해서는 다음과 같은 제재가 가해집니다:</p>
+          <ul>
+            <li>해당 제품의 수입 금지 조치</li>
+            <li>수입액의 최대 10%에 해당하는 과징금 부과</li>
+            <li>수입업체 자격 정지 (심각한 위반 시)</li>
+          </ul>
+          
+          <h3>기업 대응 방안</h3>
+          <p>글로벌 기업들은 다음과 같은 준비가 필요합니다:</p>
+          <ul>
+            <li>공급망 매핑 및 위험 평가 시스템 구축</li>
+            <li>공급업체 ESG 교육 및 개선 지원 프로그램 운영</li>
+            <li>블록체인 등 디지털 기술을 활용한 공급망 추적 시스템 도입</li>
+          </ul>
+        `
+      },
+      {
+        id: 'card_006',
+        title: 'EU REACH 규정 나노물질 등록 의무 확대',
+        category: '화학규제',
+        summary: '유럽 화학물질청이 나노물질에 대한 REACH 등록 의무를 확대하고 안전성 평가 기준을 강화했습니다. 나노기술의 안전한 발전을 위한 예방적 접근입니다.',
+        mainChanges: '연간 1톤 이하 나노물질도 등록 의무 대상 포함, 나노물질 특성 정보 추가 제출 요구, 생태독성 시험 강화',
+        effectiveDate: '2024-07-01',
+        sourceUrl: '#',
+        lastUpdated: '2025-09-04',
+        sourceAgency: '유럽 화학물질청',
+        country: 'EU',
+        keywords: 'REACH, 나노물질, 화학물질등록',
+        impactScope: '나노물질 제조·수입업체, 화학 기업',
+        status: 'EFFECTIVE',
+        isNew: false,
+        fullContent: `
+          <h2>EU REACH 규정 나노물질 등록 의무 확대</h2>
+          
+          <p><strong>발표일:</strong> 2024년 7월 1일<br>
+          <strong>발표기관:</strong> 유럽 화학물질청 (ECHA)<br>
+          <strong>시행일:</strong> 2024년 7월 1일</p>
+          
+          <h3>개정 배경</h3>
+          <p>나노기술의 급속한 발전과 함께 나노물질의 사용이 증가하면서, 인체 및 환경에 미치는 잠재적 위험에 대한 우려가 커지고 있습니다. EU는 예방 원칙에 따라 나노물질에 대한 규제를 강화하기로 결정했습니다.</p>
+          
+          <h3>주요 변경사항</h3>
+          <ul>
+            <li><strong>등록 임계량 하향:</strong> 기존 연간 1톤 이상에서 연간 100kg 이상으로 하향 조정</li>
+            <li><strong>나노형태 구분:</strong> 동일 화학물질이라도 나노형태는 별도 등록 필요</li>
+            <li><strong>특성 정보 확대:</strong> 입자 크기 분포, 표면적, 표면 화학 등 나노 특성 정보 필수 제출</li>
+            <li><strong>시험 방법 개선:</strong> 나노물질 특성에 맞는 표준 시험법 적용</li>
+          </ul>
+          
+          <h3>안전성 평가 강화</h3>
+          <ul>
+            <li><strong>흡입 독성:</strong> 나노물질의 폐 침착 및 염증 반응 평가 강화</li>
+            <li><strong>생체 축적:</strong> 장기별 축적 양상 및 배출 경로 분석</li>
+            <li><strong>환경 영향:</strong> 수생 생물 및 토양 생물에 대한 영향 평가</li>
+            <li><strong>작업자 노출:</strong> 제조 및 사용 과정에서의 작업자 노출 평가</li>
+          </ul>
+          
+          <h3>업계 영향</h3>
+          <p>이번 규제 강화로 영향을 받는 주요 산업 분야:</p>
+          <ul>
+            <li><strong>화장품:</strong> 자외선 차단제, 색소 등에 사용되는 나노물질</li>
+            <li><strong>전자산업:</strong> 반도체, 디스플레이용 나노물질</li>
+            <li><strong>의료기기:</strong> 나노 의약품, 진단용 나노물질</li>
+            <li><strong>건설자재:</strong> 나노 코팅, 나노 시멘트 등</li>
+          </ul>
+          
+          <h3>기업 대응 전략</h3>
+          <ul>
+            <li>나노물질 인벤토리 재점검 및 등록 계획 수립</li>
+            <li>나노물질 특성 분석을 위한 전문 시험기관과의 협력</li>
+            <li>대체 물질 개발 또는 나노물질 사용량 최적화</li>
+            <li>공급망 내 나노물질 정보 공유 체계 구축</li>
+          </ul>
+        `
+      }
+    ];
+    
+    // 페이지 로드 시 즉시 카드 표시
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log('페이지 로드 완료');
+      lucide.createIcons();
+      
+      // 즉시 샘플 데이터 표시
+      allCards = sampleCards;
+      displayCards(sampleCards);
+      updateCardCount(sampleCards.length);
+    });
+
+    // 모든 카드 표시
+    function showAllCards() {
+      displayCards(allCards);
+    }
+
+    // 수동 업데이트
+    function manualUpdate() {
+      const updateBtn = document.getElementById('updateBtn');
+      const originalHTML = updateBtn.innerHTML;
+      
+      updateBtn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin mr-2"></i>업데이트 중...';
+      updateBtn.disabled = true;
+      
+      // 2초 후 완료 시뮬레이션
+      setTimeout(() => {
+        updateBtn.innerHTML = originalHTML;
+        updateBtn.disabled = false;
+        
+        const newCount = Math.floor(Math.random() * 3) + 1;
+        showUpdateStatus(`업데이트 완료! 새로운 규제 카드 ${newCount}개가 추가되었습니다.`);
+        lucide.createIcons();
+      }, 2000);
+    }
+
+    // 카테고리 필터링
+    function filterCategory(category) {
+      currentFilter.category = category;
+      updateFilterButtons('category', category);
+      
+      let filteredCards = allCards;
+      if (category !== '전체') {
+        filteredCards = allCards.filter(card => 
+          card.category.includes(category) ||
+          card.keywords.toLowerCase().includes(category.toLowerCase())
+        );
+      }
+      
+      displayCards(filteredCards);
+    }
+
+    // 검색 처리
+    function handleSearch() {
+      const query = document.getElementById('searchInput').value.trim();
+      
+      if (query === '') {
+        filterCategory(currentFilter.category);
+        return;
+      }
+      
+      const searchTerm = query.toLowerCase();
+      const filteredCards = allCards.filter(card => 
+        card.title.toLowerCase().includes(searchTerm) ||
+        card.summary.toLowerCase().includes(searchTerm) ||
+        card.mainChanges.toLowerCase().includes(searchTerm) ||
+        card.keywords.toLowerCase().includes(searchTerm) ||
+        card.sourceAgency.toLowerCase().includes(searchTerm)
+      );
+      
+      displayCards(filteredCards);
+    }
+
+    // 카드 표시
+    function displayCards(cards) {
+      const container = document.getElementById('cardsContainer');
+      const emptyState = document.getElementById('emptyState');
+      
+      container.innerHTML = '';
+      emptyState.classList.add('hidden');
+
+      if (!cards || cards.length === 0) {
+        emptyState.classList.remove('hidden');
+        return;
+      }
+
+      cards.forEach((card, index) => {
+        setTimeout(() => {
+          const cardElement = createCardElement(card);
+          cardElement.classList.add('fade-in-up');
+          container.appendChild(cardElement);
+        }, index * 100);
+      });
+
+      setTimeout(() => {
+        lucide.createIcons();
+      }, cards.length * 100 + 100);
+    }
+
+    // 카드 요소 생성 (색상 통일)
+    function createCardElement(card) {
+      const cardDiv = document.createElement('div');
+      
+      const statusText = {
+        'ANNOUNCED': '발표됨',
+        'DRAFT': '초안',
+        'EFFECTIVE': '시행중'
+      };
+      
+      // 카테고리별 색상 (파란색과 오렌지색만 사용)
+      const isBlueCategory = ['환경정책', '무역정책', '환경규제'].includes(card.category);
+      const gradient = isBlueCategory ? 
+        'linear-gradient(135deg, #0f2e69 0%, #1e40af 100%)' : 
+        'linear-gradient(135deg, #dc8d32 0%, #f59e0b 100%)';
+      
+      cardDiv.className = `rounded-2xl shadow-xl card-hover overflow-hidden`;
+      cardDiv.style.background = gradient;
+      
+      cardDiv.innerHTML = `
+        <div class="p-6 text-white">
+          <!-- Header -->
+          <div class="flex items-start justify-between mb-4">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-3 py-1 text-xs font-semibold bg-white/20 backdrop-blur-sm text-white rounded-full">
+                ${card.category}
+              </span>
+              ${card.isNew ? `
+                <span class="badge-new px-3 py-1 text-xs font-semibold text-white rounded-full flex items-center gap-1">
+                  <i data-lucide="sparkles" class="w-3 h-3"></i>
+                  NEW
+                </span>
+              ` : ''}
+            </div>
+            <span class="text-xs font-medium bg-white/20 backdrop-blur-sm px-2 py-1 rounded-lg">
+              ${card.country}
+            </span>
+          </div>
+          
+          <!-- Title -->
+          <h3 class="text-xl font-bold mb-3 leading-tight">
+            ${card.title}
+          </h3>
+          
+          <!-- Summary -->
+          <p class="text-white/90 mb-4 leading-relaxed text-sm">
+            ${card.summary}
+          </p>
+          
+          <!-- Details -->
+          <div class="space-y-4">
+            <div>
+              <div class="flex items-center gap-2 mb-2">
+                <i data-lucide="zap" class="w-4 h-4"></i>
+                <h4 class="font-semibold text-sm">주요 변경사항</h4>
+              </div>
+              <p class="text-sm text-white/90 pl-6 leading-relaxed">
+                ${card.mainChanges}
+              </p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <i data-lucide="building" class="w-4 h-4"></i>
+                  <h4 class="font-semibold text-xs">담당 기관</h4>
+                </div>
+                <p class="text-xs text-white/80 pl-6">${card.sourceAgency}</p>
+              </div>
+              
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <i data-lucide="calendar" class="w-4 h-4"></i>
+                  <h4 class="font-semibold text-xs">시행일자</h4>
+                </div>
+                <p class="text-xs font-medium pl-6">${card.effectiveDate}</p>
+              </div>
+            </div>
+
+            ${card.impactScope ? `
+            <div>
+              <div class="flex items-center gap-2 mb-2">
+                <i data-lucide="target" class="w-4 h-4"></i>
+                <h4 class="font-semibold text-sm">영향 범위</h4>
+              </div>
+              <p class="text-sm text-white/90 pl-6">${card.impactScope}</p>
+            </div>
+            ` : ''}
+          </div>
+          
+          <!-- Footer -->
+          <div class="mt-6 pt-4 border-t border-white/20">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-1 text-xs font-medium bg-white/20 backdrop-blur-sm rounded-lg">
+                  ${statusText[card.status] || card.status}
+                </span>
+                ${card.keywords ? `
+                  <span class="text-xs text-white/70 truncate">
+                    ${card.keywords.split(',').slice(0, 2).join(', ')}
+                  </span>
+                ` : ''}
+              </div>
+              <span class="text-xs text-white/60">
+                ${card.lastUpdated}
+              </span>
+            </div>
+
+            <button
+              onclick="openModal('${card.id}')"
+              class="w-full bg-white/90 hover:bg-white text-gray-800 font-medium py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 hover:shadow-lg"
+            >
+              <i data-lucide="file-text" class="w-4 h-4"></i>
+              원문 보기
+            </button>
+          </div>
+        </div>
+      `;
+
+      return cardDiv;
+    }
+
+    // 모달 열기
+    function openModal(cardId) {
+      const card = allCards.find(c => c.id === cardId);
+      if (!card) return;
+      
+      document.getElementById('modalTitle').textContent = card.title;
+      document.getElementById('modalBody').innerHTML = card.fullContent;
+      document.getElementById('articleModal').classList.add('show');
+      
+      // 모달 외부 클릭 시 닫기
+      document.getElementById('articleModal').onclick = function(event) {
+        if (event.target === this) {
+          closeModal();
+        }
+      }
+    }
+
+    // 모달 닫기
+    function closeModal() {
+      document.getElementById('articleModal').classList.remove('show');
+    }
+
+    // ESC 키로 모달 닫기
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        closeModal();
+      }
+    });
+
+    // 필터 버튼 업데이트
+    function updateFilterButtons(type, value) {
+      const buttons = document.querySelectorAll(`[data-${type}]`);
+      
+      buttons.forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.getAttribute(`data-${type}`) === value) {
+          btn.classList.add('active');
+        }
+      });
+    }
+
+    // 업데이트 상태 표시
+    function showUpdateStatus(message) {
+      const statusDiv = document.getElementById('updateStatus');
+      const messageSpan = document.getElementById('updateMessage');
+      
+      messageSpan.textContent = message;
+      statusDiv.classList.remove('hidden');
+      
+      setTimeout(() => {
+        statusDiv.classList.add('hidden');
+      }, 5000);
+    }
+
+    // 카드 수 업데이트
+    function updateCardCount(count) {
+      document.getElementById('totalCards').textContent = `총 ${count}개`;
+    }
+  </script>
+</body>
+</html>
