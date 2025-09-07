@@ -1,0 +1,166 @@
+<script>
+  const $ = s => document.querySelector(s);
+  let selectedSector = 'solar';
+  let isAnalyzing = false;
+  let currentData = [];
+
+  (function init(){
+    // 섹터 드롭다운
+    const sel = $('#sector');
+    (PAYLOAD.sectors||[]).forEach(s=>{
+      const o=document.createElement('option'); 
+      o.value=s; 
+      o.textContent=PAYLOAD.sectorLabels?.[s]||s; 
+      sel.appendChild(o);
+    });
+    sel.value = selectedSector;
+    sel.addEventListener('change', ()=>{ 
+      selectedSector = sel.value; 
+      updateCaption();
+      // 섹터 변경 시 자동으로 새 데이터 로드
+      startAnalysis();
+    });
+
+    // 검색창 Enter
+    $('#query').addEventListener('keydown', e=>{ 
+      if(e.key==='Enter'){ e.preventDefault(); startAnalysis(); }
+    });
+
+    updateCaption();
+    
+    // 자동 시작
+    setTimeout(startAnalysis, 1000);
+  })();
+
+  function updateCaption() {
+    const name = PAYLOAD.sectorLabels?.[selectedSector] || selectedSector;
+    $('#sector-caption').textContent = `${name} 분야의 국가별 규제 현황을 실시간으로 비교분석합니다.`;
+  }
+
+  function switchTab(el){
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    el.classList.add('active');
+    const k = el.getAttribute('data-tab');
+    ['overview','compliance'].forEach(key=>{
+      $('#panel-'+key).style.display = (k===key)?'block':'none';
+    });
+  }
+
+  function showStatus(msg, type='loading') {
+    const status = $('#status');
+    const text = $('#statusText');
+    text.textContent = msg;
+    status.className = `status ${type}`;
+    status.style.display = 'flex';
+  }
+
+  function hideStatus() {
+    $('#status').style.display = 'none';
+  }
+
+  function startAnalysis() {
+    if (isAnalyzing) return;
+    
+    isAnalyzing = true;
+    const btn = $('#searchBtn');
+    btn.disabled = true;
+    btn.textContent = '분석 중...';
+    
+    const sectorName = PAYLOAD.sectorLabels?.[selectedSector] || selectedSector;
+    showStatus(`${sectorName} 분야 규제 정보를 수집하고 있습니다...`, 'loading');
+    
+    const query = $('#query').value.trim();
+    
+    google.script.run
+      .withSuccessHandler(handleSuccess)
+      .withFailureHandler(handleError)
+      .fetchRegulationData(selectedSector, query);
+  }
+
+  function handleSuccess(result) {
+    isAnalyzing = false;
+    const btn = $('#searchBtn');
+    btn.disabled = false;
+    btn.textContent = '검색';
+    
+    if (result.success) {
+      showStatus(`✅ ${result.summary}`, 'success');
+      setTimeout(hideStatus, 3000);
+      
+      currentData = result.rows || [];
+      renderTable(currentData);
+      renderCompliance(currentData);
+    } else {
+      showStatus(`⚠️ ${result.summary}`, 'error');
+      currentData = [];
+    }
+  }
+
+  function handleError(error) {
+    isAnalyzing = false;
+    const btn = $('#searchBtn');
+    btn.disabled = false;
+    btn.textContent = '검색';
+    
+    showStatus(`❌ 오류: ${error.message || error}`, 'error');
+    currentData = [];
+  }
+
+  function renderTable(rows) {
+    const tbody = $('#main-table tbody');
+    tbody.innerHTML = '';
+    
+    if (!rows || rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:3rem; color:var(--muted);">검색 결과가 없습니다.</td></tr>';
+      return;
+    }
+    
+    rows.forEach(row => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${escapeHtml(row.country)}</strong></td>
+        <td><span class="chip">${escapeHtml(row.region)}</span></td>
+        <td style="max-width:300px; font-weight:600; color:var(--brand-navy);">${escapeHtml(row.reportTitle || 'N/A')}</td>
+        <td><div class="regulation-summary">${escapeHtml(row.requirements)}</div></td>
+        <td><a href="${escapeHtml(row.sourceUrl || '#')}" target="_blank" class="btn-link">원문 보기</a></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderCompliance(rows) {
+    const container = $('#compliance-content');
+    
+    if (!rows || rows.length === 0) {
+      container.innerHTML = '<div class="compliance-item"><h4>데이터 없음</h4><p>검색을 실행하면 컴플라이언스 정보가 표시됩니다.</p></div>';
+      return;
+    }
+    
+    container.innerHTML = rows.map(row => `
+      <div class="compliance-item">
+        <h4>${escapeHtml(row.country)} (${escapeHtml(row.region)})</h4>
+        <div class="report-title">${escapeHtml(row.reportTitle || 'N/A')}</div>
+        <div class="compliance-meta">
+          <span>📅 보고서 작성일: ${escapeHtml(row.reportDate || 'N/A')}</span>
+          <span>⚡ 규제 발효일: ${escapeHtml(row.effectiveDate || 'N/A')}</span>
+          <span>🏢 작성기관: ${escapeHtml(row.source || 'N/A')}</span>
+        </div>
+        <p style="margin:0; line-height:1.6; color:var(--fg);">${escapeHtml(row.requirements)}</p>
+      </div>
+    `).join('');
+  }
+
+  function resetData() {
+    $('#query').value = '';
+    hideStatus();
+    currentData = [];
+    $('#main-table tbody').innerHTML = '<tr><td colspan="5" style="text-align:center; padding:3rem; color:var(--muted);">초기화되었습니다. 검색을 시작하세요.</td></tr>';
+    $('#compliance-content').innerHTML = '<div class="compliance-item"><h4>데이터 없음</h4><p>검색을 실행하면 컴플라이언스 정보가 표시됩니다.</p></div>';
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+  }
+</script>
