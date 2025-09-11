@@ -1,28 +1,33 @@
 # pages/landing-page.py
-# ------------------------------------------------------------
-# - PDF 여러 개 업로드
-# - 왼쪽 사이드바에 업로드 기록 표시
-# - (옵션) 첫 페이지 텍스트 프리뷰
-# ------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# 홈: 분석 타이틀 + 여러 PDF 업로드 → '분석하기' 누르면
+#   1) 세션에 분석 레코드 생성
+#   2) compare-page(단일 템플릿)로 이동하되 ?aid=<생성ID> 로 라우팅
+# -----------------------------------------------------------------------------
 import streamlit as st
-from utils import extract_text_from_pdf
+from utils import render_sidebar, create_analysis, goto_compare, extract_text_from_pdf
 
-st.title("📂 랜딩페이지 — PDF 업로드 & 기록")
+st.set_page_config(page_title="랜딩페이지 — PDF 업로드 & 기록", layout="wide")
+render_sidebar()
 
-# 여러 개 업로드 허용
-files = st.file_uploader("PDF 여러 개 업로드", type=["pdf"], accept_multiple_files=True)
+st.markdown("## 📂 랜딩페이지 — PDF 업로드 & 기록")
+st.caption("한 번에 여러 PDF를 올려 하나의 '분석'으로 관리합니다.")
 
-# 업로드 기록 세션 상태
-if "uploaded_names" not in st.session_state:
-    st.session_state.uploaded_names = []
+title = st.text_input("분석 타이틀", placeholder="예) 2025-09-11 센서 논문 비교")
 
+files = st.file_uploader(
+    "PDF 여러 개 업로드",
+    type=["pdf"],
+    accept_multiple_files=True,
+    help="파일당 200MB (데모).",
+)
+
+st.info("※ 실제 인덱싱/DB 업로드는 팀 인덱서에서 처리. 여긴 UI/라우팅만.", icon="ℹ️")
+
+# 선택적: 첫 페이지 텍스트 미리보기
 if files:
+    st.markdown("#### 업로드 미리보기")
     for f in files:
-        # 업로드 이름 기록
-        if f.name not in st.session_state.uploaded_names:
-            st.session_state.uploaded_names.append(f.name)
-
-        # 간단 프리뷰(첫 1페이지 텍스트)
         with st.expander(f"미리보기: {f.name}", expanded=False):
             try:
                 preview = extract_text_from_pdf(f.read(), max_pages=1)
@@ -30,9 +35,8 @@ if files:
             except Exception as e:
                 st.warning(f"미리보기 실패: {e}")
 
-# 사이드바에 업로드 기록
-st.sidebar.subheader("📜 업로드 기록")
-for n in st.session_state.uploaded_names:
-    st.sidebar.write(f"- {n}")
-
-st.info("※ 실제 인덱싱/DB 업로드는 팀의 인덱서에서 처리됩니다. 여기서는 UI만 제공합니다.")
+can_run = bool(files)
+if st.button("분석하기", type="primary", disabled=not can_run):
+    payload = [{"name": f.name, "bytes": f.getvalue()} for f in files]
+    aid = create_analysis(title or "제목 없음", payload)
+    goto_compare(aid)
