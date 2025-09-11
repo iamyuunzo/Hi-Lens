@@ -1,0 +1,12 @@
+# Streamlit 웹앱
+streamlit==1.37.0
+
+# API 통신
+requests==2.32.3
+
+# PDF 프리뷰(선택)
+pymupdf==1.24.7  # import명은 fitz
+
+# (선택) 목업 서버용 - 로컬 테스트 시만 사용(배포에는 영향 없음)
+fastapi==0.111.0
+uvicorn==0.30.1
