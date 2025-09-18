@@ -1,0 +1,21 @@
+# 1. 베이스 이미지: 사용자님의 개발 환경과 동일한 파이썬 3.12 버전을 사용합니다.
+FROM python:3.12-slim
+
+# 2. 작업 디렉토리 설정: 컨테이너 내부의 /app 폴더에서 작업을 수행합니다.
+WORKDIR /app
+
+# 3. requirements.txt 파일 복사: 라이브러리 목록 파일을 먼저 복사합니다.
+COPY requirements.txt .
+
+# 4. 라이브러리 설치: 목록에 있는 모든 라이브러리를 설치합니다.
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 5. 나머지 프로젝트 파일 복사: app.py 등 나머지 모든 파일을 복사합니다.
+COPY . .
+
+# 6. 포트 개방: 스트림릿의 기본 포트인 8501번을 열어줍니다.
+EXPOSE 8501
+
+# 7. 앱 실행: 컨테이너가 시작될 때 app.py를 실행합니다.
+# --server.port=8501 과 --server.address=0.0.0.0 는 클라우드 환경에서 필수적인 옵션입니다.
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
