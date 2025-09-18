@@ -1,0 +1,7 @@
+streamlit
+pdfplumber==0.9.0
+sentence-transformers
+google-generativeai
+Pillow
+numpy
+pandas
