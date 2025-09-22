@@ -1,0 +1,21 @@
+# Streamlit & PDF/표 처리
+streamlit>=1.33.0
+pdfplumber==0.9.0
+pandas
+numpy<2
+Pillow
+
+# 이미지 렌더링(이미지 크롭을 PyMuPDF로, OS 의존성 X)
+pymupdf>=1.24.0  # ← NEW: ImageMagick 없어도 표/그림 크롭 가능
+
+# (옵션) 검색/임베딩
+sentence-transformers
+rank_bm25
+scikit-learn>=1.4.0
+
+# (옵션) OCR
+opencv-python-headless>=4.9.0
+pytesseract>=0.3.10
+
+# (옵션) LLM
+google-generativeai
