@@ -1,0 +1,7 @@
+[server]
+headless = true
+enableCORS = false
+maxUploadSize = 200   # MB
+
+[theme]
+base = "light"

@@ -1,41 +1,6 @@
-# -----------------------------
-# Python / OS / IDE 잡파일 무시
-# -----------------------------
-
-# 가상환경(이름이 .venv, venv 둘 다 커버)
 .venv/
-venv/
-
-# 파이썬 바이트코드/캐시
+env/
 __pycache__/
-*.py[cod]
-*.pyo
-
-# 빌드 산출물
-build/
-dist/
-*.egg-info/
-
-# Jupyter 체크포인트
-.ipynb_checkpoints/
-
-# 운영체제별 숨김 파일
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# 편집기/IDE 설정
-.vscode/
-.idea/
-
-# 로그/임시
-*.log
-*.tmp
-*.swp
-
-# 환경 변수 파일(민감정보)
+*.pyc
+.streamlit/secrets.toml
 .env
-
-# 기타: 데이터/결과물 폴더가 있다면 여기에 추가
-# data/
-# outputs/
