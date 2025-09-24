@@ -1,8 +1,9 @@
 # llm.py
 # ==========================================
-# Gemini LLM 모듈 (lazy init 버전)
+# Gemini LLM 모듈 (최종 통합본)
 # - Streamlit Cloud Secrets 우선 → 환경변수(os.getenv) 보조
-# - import 시점에 RuntimeError 발생하지 않도록 개선
+# - import 시점에 RuntimeError 발생하지 않도록 Lazy Init 적용
+# - summarizer.py 호환: llm_chat, SUMMARIZER_DEFAULT_SYSTEM 추가
 # ==========================================
 
 import os
@@ -53,6 +54,36 @@ def _get_model(model_name: str = "gemini-1.5-flash"):
 # -----------------------------
 def get_provider_name() -> str:
     return "GEMINI"
+
+
+# -----------------------------
+# Summarizer 기본 System 프롬프트
+# -----------------------------
+SUMMARIZER_DEFAULT_SYSTEM = """당신은 정책/보고서 전문 요약가입니다.
+- 문서 밖 정보는 추가하지 마세요.
+- 간결하고 명확하게 한국어로 작성하세요.
+"""
+
+
+# -----------------------------
+# 공용 LLM 호출 함수
+# -----------------------------
+def llm_chat(system_prompt: str, user_prompt: str, model_name: str = "gemini-1.5-flash") -> str:
+    """
+    system_prompt: 역할/규칙 지정
+    user_prompt: 실제 요약/질의 내용
+    """
+    model = _get_model(model_name)
+    try:
+        resp = model.generate_content(
+            [
+                {"role": "system", "parts": [system_prompt]},
+                {"role": "user", "parts": [user_prompt]},
+            ]
+        )
+        return getattr(resp, "text", "").strip() or "⚠️ 응답이 비어 있습니다."
+    except Exception as e:
+        return f"⚠️ LLM 호출 중 오류: {e}"
 
 
 # -----------------------------
@@ -109,4 +140,3 @@ def explain_tables(table_text: str) -> str:
         return getattr(response, "text", "").strip() or "⚠️ 응답이 비어 있습니다."
     except Exception as e:
         return f"⚠️ LLM 호출 중 오류: {e}"
- 
