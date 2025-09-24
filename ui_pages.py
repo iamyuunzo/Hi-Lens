@@ -1,16 +1,12 @@
 # ui_pages.py (최종 수정본)
 # ---------------------------------------------------------------
 # ✅ 반영 사항
-# - 표/그림 목차: 가로로 ‘따닥따닥’ 붙는 그리드 배치 (10열, 자동 줄바꿈)
+# - experimental_rerun() → rerun() 로 교체 (Streamlit 최신 호환)
+# - 표/그림 목차: 가로 그리드(10열, 자동 줄바꿈)
 # - 유저 말풍선: 오른쪽 정렬(포인트컬러), 선택 이미지: 중앙정렬(폭 600 고정)
 # - AI 답변: 왼쪽 정렬, 불릿 처리, 질문 간 구분선
-# - 하단 입력창: 탭마다 고정 느낌으로 노출(내용만 스크롤)
-# - 여백 최소화(목차 버튼, 문단 공백)
-# - ⬆️ 추가 반영:
-#   1) 표/그림 프리뷰 중앙 정렬
-#   2) 요약 들여쓰기 제거
-#   3) 대화/표그림 탭 입력 분리
-#   4) LLM 연결 (본문=answer_with_context, 표=RAG+explain_tables)
+# - 하단 입력창: 탭마다 고정 느낌(내용만 스크롤)
+# - 여백 최소화, 요약 들여쓰기 제거, LLM 연결
 # ---------------------------------------------------------------
 from __future__ import annotations
 import time, hashlib, datetime as dt
@@ -96,7 +92,7 @@ def render_sidebar():
 
     if st.sidebar.button("🏠 홈으로", use_container_width=True):
         st.session_state["route"] = "landing"
-        st.experimental_rerun()
+        st.rerun()   # ✅ 최신 API
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("PDF 분석 기록")
@@ -114,7 +110,7 @@ def render_sidebar():
                     "route": "analysis",
                 }
             )
-            st.experimental_rerun()
+            st.rerun()   # ✅ 최신 API
 
 
 # ───────────────────────────────────────────────
@@ -152,7 +148,7 @@ def landing_page():
         st.session_state.update(
             {"_current_tid": tid, "pdf_bytes": pdf_bytes, "pdf_name": pdf_name, "route": "loading"}
         )
-        st.rerun()
+        st.rerun()   # ✅ 최신 API
 
 
 def loading_page():
@@ -178,7 +174,7 @@ def loading_page():
     th = _current_thread()
     if th: th.update({"chunks": chunks, "summary": summary})
 
-    st.session_state["route"] = "analysis"; st.rerun()
+    st.session_state["route"] = "analysis"; st.rerun()   # ✅ 최신 API
 
 
 # ───────────────────────────────────────────────
@@ -218,7 +214,7 @@ def analysis_page():
             for i, (qid, data) in enumerate(recos.items()):
                 if st.button(data["question"], key=f"recbtn-{i}"):
                     _append_dialog(user=data["question"], answer=data["answer"])
-                    st.experimental_rerun()
+                    st.rerun()   # ✅ 최신 API
 
         _render_dialogs("chat", scroll_height=600)
         _fixed_input("chat")
@@ -281,7 +277,7 @@ def _fixed_input(which: str):
                 ans = "관련 표를 찾지 못했습니다."
             _append_dialog(user=usr_q, answer=ans)
 
-        st.experimental_rerun()
+        st.rerun()   # ✅ 최신 API
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -370,7 +366,7 @@ def _render_toc_buttons(items: List[Dict[str, Any]], kind: str, chunks: Dict[str
                     ctx_text = _neighbor_text(chunks, f["page"]) if f else ""
                     ans = answer_with_context(q, ctx_text[:1000], page_label=f["page"]) if f else ""
                     _append_dialog(user=q, answer=ans, item={"kind": "figure", "obj": f})
-                st.experimental_rerun()
+                st.rerun()   # ✅ 최신 API
 
         if (i % cols) == (cols - 1) and (i != len(items) - 1):
             cols_container = st.columns(cols, gap="small")
