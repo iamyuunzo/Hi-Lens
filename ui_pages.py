@@ -1,12 +1,8 @@
 # ui_pages.py (최종 수정본)
 # ---------------------------------------------------------------
-# ✅ 반영 사항
-# - experimental_rerun() → rerun() 로 교체 (Streamlit 최신 호환)
-# - 표/그림 목차: 가로 그리드(10열, 자동 줄바꿈)
-# - 유저 말풍선: 오른쪽 정렬(포인트컬러), 선택 이미지: 중앙정렬(폭 600 고정)
-# - AI 답변: 왼쪽 정렬, 불릿 처리, 질문 간 구분선
-# - 하단 입력창: 탭마다 고정 느낌(내용만 스크롤)
-# - 여백 최소화, 요약 들여쓰기 제거, LLM 연결
+# 변경 사항:
+# - st.image(..., use_container_width=True) 로 경고 제거
+# - _format_answer(): 항상 불릿 처리 (LLM 답변이 줄글일 때도 불릿으로 변환)
 # ---------------------------------------------------------------
 from __future__ import annotations
 import time, hashlib, datetime as dt
@@ -92,7 +88,7 @@ def render_sidebar():
 
     if st.sidebar.button("🏠 홈으로", use_container_width=True):
         st.session_state["route"] = "landing"
-        st.rerun()   # ✅ 최신 API
+        st.rerun()
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("PDF 분석 기록")
@@ -110,7 +106,7 @@ def render_sidebar():
                     "route": "analysis",
                 }
             )
-            st.rerun()   # ✅ 최신 API
+            st.rerun()
 
 
 # ───────────────────────────────────────────────
@@ -148,7 +144,7 @@ def landing_page():
         st.session_state.update(
             {"_current_tid": tid, "pdf_bytes": pdf_bytes, "pdf_name": pdf_name, "route": "loading"}
         )
-        st.rerun()   # ✅ 최신 API
+        st.rerun()
 
 
 def loading_page():
@@ -174,7 +170,7 @@ def loading_page():
     th = _current_thread()
     if th: th.update({"chunks": chunks, "summary": summary})
 
-    st.session_state["route"] = "analysis"; st.rerun()   # ✅ 최신 API
+    st.session_state["route"] = "analysis"; st.rerun()
 
 
 # ───────────────────────────────────────────────
@@ -205,7 +201,7 @@ def analysis_page():
             if summary:
                 clean = summary.replace("#### 문서 요약", "").replace("문서 요약", "")
                 lines = [ln.strip() for ln in clean.splitlines() if ln.strip()]
-                st.write("\n".join(lines))  # 🔧 들여쓰기 제거
+                st.write("\n".join(lines))
             else:
                 st.info("요약이 아직 준비되지 않았습니다.")
 
@@ -214,7 +210,7 @@ def analysis_page():
             for i, (qid, data) in enumerate(recos.items()):
                 if st.button(data["question"], key=f"recbtn-{i}"):
                     _append_dialog(user=data["question"], answer=data["answer"])
-                    st.rerun()   # ✅ 최신 API
+                    st.rerun()
 
         _render_dialogs("chat", scroll_height=600)
         _fixed_input("chat")
@@ -233,7 +229,7 @@ def analysis_page():
 
 
 # ───────────────────────────────────────────────
-# 하단 고정 입력창 (탭별 + LLM 연결)
+# 하단 고정 입력창
 # ───────────────────────────────────────────────
 def _fixed_input(which: str):
     st.markdown(
@@ -258,12 +254,10 @@ def _fixed_input(which: str):
         chunks = st.session_state.get("chunks") or {}
 
         if which == "chat":
-            # 본문 일부를 모아서 LLM 호출
             context = "\n".join([x.get("text", "") for x in chunks.get("texts", [])[:3]])[:1500]
             ans = answer_with_context(usr_q, context, page_label="?")
             _append_dialog(user=usr_q, answer=ans)
-
-        else:  # toc 탭 → 표 검색 후 LLM 호출
+        else:
             rag = RAGIndex()
             rag.build_from_chunks(chunks)
             results = rag.search_tables(usr_q, k=2)
@@ -277,8 +271,7 @@ def _fixed_input(which: str):
                 ans = "관련 표를 찾지 못했습니다."
             _append_dialog(user=usr_q, answer=ans)
 
-        st.rerun()   # ✅ 최신 API
-
+        st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -296,7 +289,6 @@ def _render_dialogs(which: str, scroll_height: int = 600):
     box = st.container(height=scroll_height)
     with box:
         for d in dialogs:
-            # 사용자 말풍선
             st.markdown(
                 f"""
                 <div style="display:flex;justify-content:flex-end;margin:6px 0;">
@@ -308,14 +300,11 @@ def _render_dialogs(which: str, scroll_height: int = 600):
                 """,
                 unsafe_allow_html=True,
             )
-
-            # 선택된 표/그림 프리뷰 (중앙 정렬 보장)
             if d.get("item"):
                 st.markdown("<div style='display:flex;justify-content:center;width:100%;'>", unsafe_allow_html=True)
                 _render_item_preview(d["item"])
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # AI 답변
             st.markdown("**Hi-Lens의 답변**")
             formatted = _format_answer(d["answer"])
             st.markdown(
@@ -332,7 +321,7 @@ def _render_dialogs(which: str, scroll_height: int = 600):
 
 
 # ───────────────────────────────────────────────
-# 목차 버튼 (그리드)
+# 목차 버튼
 # ───────────────────────────────────────────────
 def _render_toc_buttons(items: List[Dict[str, Any]], kind: str, chunks: Dict[str, Any], cols: int = 10):
     st.markdown(
@@ -366,41 +355,41 @@ def _render_toc_buttons(items: List[Dict[str, Any]], kind: str, chunks: Dict[str
                     ctx_text = _neighbor_text(chunks, f["page"]) if f else ""
                     ans = answer_with_context(q, ctx_text[:1000], page_label=f["page"]) if f else ""
                     _append_dialog(user=q, answer=ans, item={"kind": "figure", "obj": f})
-                st.rerun()   # ✅ 최신 API
-
+                st.rerun()
         if (i % cols) == (cols - 1) and (i != len(items) - 1):
             cols_container = st.columns(cols, gap="small")
 
 
 # ───────────────────────────────────────────────
-# 선택 아이템(표/그림) 프리뷰
+# 선택 아이템 프리뷰
 # ───────────────────────────────────────────────
 def _render_item_preview(item: Dict[str, Any]):
-    if not item or "obj" not in item:
-        return
+    if not item or "obj" not in item: return
     obj = item["obj"]
-    if not obj:
-        return
+    if not obj: return
 
     if item["kind"] == "table" and obj.get("bbox") and st.session_state.get("pdf_bytes"):
         img = crop_table_image(st.session_state["pdf_bytes"], obj["page"] - 1, obj["bbox"], dpi=220)
-        st.image(img, caption=f"<표 {obj['label']}> p.{obj['page']}", use_column_width=False, width=600)
+        st.image(img, caption=f"<표 {obj['label']}> p.{obj['page']}", use_container_width=True, width=600)
     elif item["kind"] == "figure" and obj.get("bbox") and st.session_state.get("pdf_bytes"):
         img = crop_figure_image(st.session_state["pdf_bytes"], obj["page"] - 1, obj["bbox"], dpi=220)
-        st.image(img, caption=f"[그림 {obj['label']}] p.{obj['page']}", use_column_width=False, width=600)
+        st.image(img, caption=f"[그림 {obj['label']}] p.{obj['page']}", use_container_width=True, width=600)
 
 
 # ───────────────────────────────────────────────
-# 답변 포맷
+# 답변 포맷 (항상 불릿 처리)
 # ───────────────────────────────────────────────
 def _format_answer(text: str) -> str:
     if not text:
         return ""
+    raw_lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     lines: List[str] = []
-    for ln in text.split("* "):
-        if ln.strip():
-            clean = ln.strip().lstrip("*").strip()
+    for ln in raw_lines:
+        if ln.startswith("*"):
+            clean = ln.lstrip("*").strip()
             lines.append("• " + clean)
+        else:
+            lines.append("• " + ln)
     return "\n".join(lines)
 
 
