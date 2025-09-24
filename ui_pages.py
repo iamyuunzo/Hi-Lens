@@ -1,423 +1,443 @@
-# ui_pages.py
-# -*- coding: utf-8 -*-
+# ui_pages.py (최종 수정본)
+# ---------------------------------------------------------------
+# ✅ 반영 사항
+# - 표/그림 목차: 가로로 ‘따닥따닥’ 붙는 그리드 배치 (10열, 자동 줄바꿈)
+# - 유저 말풍선: 오른쪽 정렬(포인트컬러), 선택 이미지: 중앙정렬(폭 600 고정)
+# - AI 답변: 왼쪽 정렬, 불릿 처리, 질문 간 구분선
+# - 하단 입력창: 탭마다 고정 느낌으로 노출(내용만 스크롤)
+# - 여백 최소화(목차 버튼, 문단 공백)
+# - ⬆️ 추가 반영:
+#   1) 표/그림 프리뷰 중앙 정렬
+#   2) 요약 들여쓰기 제거
+#   3) 대화/표그림 탭 입력 분리
+#   4) LLM 연결 (본문=answer_with_context, 표=RAG+explain_tables)
+# ---------------------------------------------------------------
 from __future__ import annotations
-
-"""
-화면 구성 (UI 전용 수정)
-- 랜딩: 상단 유령 입력박스만 숨기고(업로더는 유지), 컨테이너를 중앙 정렬 + 상단 고정 여백(--header-gap)
-- 공통 사이드바: PDF 단위 기록/복원
-- 분석: 기존 기능/로직 유지
-"""
-
-import re
-import hashlib
-import time
-import datetime as dt
-from typing import Dict, Any, List, Tuple, Optional
+import time, hashlib, datetime as dt
+from typing import Dict, Any, List, Optional
 
 import streamlit as st
-from styles import get_css
-
-from extract import (
-    build_chunks, find_table_by_label, find_figure_by_label,
-    crop_table_image, crop_figure_image,
-)
-
-# ===== LLM 어댑터(없으면 폴백) =====
+from styles import get_css, ACCENT
+from extract import build_chunks, crop_table_image
 try:
-    from llm import answer_with_context
+    from extract import crop_figure_image
 except Exception:
-    def answer_with_context(q: str, ctx: str) -> str:
-        lines = [ln.strip() for ln in (ctx or "").splitlines() if ln.strip()]
-        return "요약: " + (lines[0][:220] if lines else (ctx or "")[:220])
+    crop_figure_image = crop_table_image
 
-try:
-    from llm import generate_query_tags
-except Exception:
-    def generate_query_tags(pages: List[Dict], k: int = 12) -> List[str]:
-        txt = " ".join(p.get("text","") for p in pages)
-        years = sorted(set(re.findall(r"20\\d{2}", txt)))[-3:]
-        base = [f"{'~'.join(years)} 연도별 지표 비교해줘"] if years else []
-        base += [w+" 추이를 표로 보여줘" for w in ["가구원수","에너지","도시가스","연료비","소비지출"]]
-        out, seen = [], set()
-        for t in base:
-            t = re.sub(r"\\s+", " ", t).strip()
-            if t and t not in seen:
-                out.append(t); seen.add(t)
-            if len(out) >= k: break
-        return out
+from llm import answer_with_context, get_provider_name, explain_tables
+from summarizer import summarize_from_chunks
+from qa_recos import QA_RECOMMENDATIONS
+from rag import RAGIndex  # 🔑 RAG 검색 사용
 
-# ================== 세션/스레드 유틸 ==================
+
+# ───────────────────────────────────────────────
+# 세션 초기화/관리
+# ───────────────────────────────────────────────
+def _init_session_defaults():
+    st.session_state.setdefault("route", "landing")
+    st.session_state.setdefault("pdf_bytes", None)
+    st.session_state.setdefault("pdf_name", "")
+    st.session_state.setdefault("chunks", {})
+    st.session_state.setdefault("summary", "")
+    st.session_state.setdefault("chat", [])
+    st.session_state.setdefault("_threads", [])
+    st.session_state.setdefault("_current_tid", None)
+    st.session_state.setdefault("toc_dialogs", [])
+
+
 def _pdf_id() -> Optional[str]:
     data = st.session_state.get("pdf_bytes")
     return hashlib.sha1(data).hexdigest()[:12] if data else None
 
-def _threads() -> List[Dict[str,Any]]:
+
+def _threads() -> List[Dict[str, Any]]:
     return st.session_state.setdefault("_threads", [])
 
-def _find_thread(tid: str) -> Optional[Dict[str,Any]]:
+
+def _current_thread() -> Optional[Dict[str, Any]]:
+    tid = st.session_state.get("_current_tid")
     for t in _threads():
         if t["tid"] == tid:
             return t
     return None
 
-def _current_thread() -> Optional[Dict[str,Any]]:
-    tid = st.session_state.get("_current_tid")
-    return _find_thread(tid) if tid else None
 
 def _ensure_thread():
     if _current_thread():
         return
     pid = _pdf_id()
     name = st.session_state.get("pdf_name") or "문서"
-    for t in _threads():
-        if t.get("pdf_id") == pid and t.get("pdf_name") == name:
-            st.session_state["_current_tid"] = t["tid"]
-            return
     tid = f"{pid}-{int(time.time())}"
-    t = {
-        "tid": tid, "pdf_id": pid, "pdf_name": name,
-        "ts": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "messages": [], "pdf_bytes": st.session_state.get("pdf_bytes"),
-        "chunks": {},
-    }
-    _threads().append(t)
+    _threads().append(
+        {
+            "tid": tid,
+            "pdf_id": pid,
+            "pdf_name": name,
+            "ts": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "messages": [],
+            "pdf_bytes": st.session_state.get("pdf_bytes"),
+            "chunks": {},
+            "summary": "",
+        }
+    )
     st.session_state["_current_tid"] = tid
 
-def _append_to_thread(item: Dict[str,Any]):
-    th = _current_thread()
-    if th: th["messages"].append(item)
 
-# ================== 공통 사이드바 ==================
+# ───────────────────────────────────────────────
+# 사이드바
+# ───────────────────────────────────────────────
 def render_sidebar():
-    st.sidebar.markdown("<div class='hp-brand'><span class='dot'></span>Hi-PolicyLens</div>", unsafe_allow_html=True)
-    st.sidebar.caption("현대해상 내부 리서치 보조")
+    st.sidebar.markdown(
+        "<div class='hp-brand'><span class='dot'></span>Hi-Lens</div>",
+        unsafe_allow_html=True,
+    )
+    st.sidebar.caption("PDF 요약·발췌·시각화 도우미")
+    st.sidebar.info(f"LLM: {get_provider_name()}", icon="🧠")
 
-    if st.sidebar.button("🏠 홈으로 가기", use_container_width=True):
-        st.session_state["route"] = "landing"; st.experimental_rerun()
+    if st.sidebar.button("🏠 홈으로", use_container_width=True):
+        st.session_state["route"] = "landing"
+        st.experimental_rerun()
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("PDF 분석 기록")
-
-    st.sidebar.markdown("<div class='hp-log-list'>", unsafe_allow_html=True)
     for t in reversed(_threads()):
         label = f"📄 {t['pdf_name']} · {t['ts']} · 질문 {len(t['messages'])}개"
         if st.sidebar.button(label, key=f"hist-{t['tid']}", use_container_width=True):
-            st.session_state["_current_tid"] = t["tid"]
-            st.session_state["pdf_name"] = t["pdf_name"]
-            st.session_state["pdf_bytes"] = t.get("pdf_bytes")
-            st.session_state["chunks"] = t.get("chunks", {})
-            st.session_state["chat"] = t.get("messages", [])
-            st.session_state["route"] = "analysis"
+            st.session_state.update(
+                {
+                    "_current_tid": t["tid"],
+                    "pdf_name": t["pdf_name"],
+                    "pdf_bytes": t.get("pdf_bytes"),
+                    "chunks": t.get("chunks", {}),
+                    "summary": t.get("summary", ""),
+                    "chat": t.get("messages", []),
+                    "route": "analysis",
+                }
+            )
             st.experimental_rerun()
-    st.sidebar.markdown("</div>", unsafe_allow_html=True)
 
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("<div class='hp-guide'>", unsafe_allow_html=True)
-    st.sidebar.subheader("사용자 가이드")
-    st.sidebar.markdown(
-        """
-        - 사이드바 **기록**에서 이전 분석 PDF를 다시 불러올 수 있습니다.  
-        - 오른쪽 **목차 패널**에서 빠른 태그/표/그림을 탐색하세요.  
-        - 표/그림은 **원본 크게 보기**로 확대 가능합니다.
-        """.strip()
-    )
-    st.sidebar.markdown("</div>", unsafe_allow_html=True)
 
-# ================== 랜딩 ==================
+# ───────────────────────────────────────────────
+# 랜딩 / 로딩
+# ───────────────────────────────────────────────
 def landing_page():
+    _init_session_defaults()
     st.markdown(f"<style>{get_css()}</style>", unsafe_allow_html=True)
     render_sidebar()
 
-    # 랜딩: 챗 입력만 숨김(업로더는 유지), 스크롤 제거 + 중앙 정렬
-    # 🔴 여기서 --header-gap(상단 고정 여백)을 적용
-    st.markdown("""
-    <style>
-      [data-testid='stChatInput'] { display:none !important; }
-      /* 랜딩 컨테이너를 '툴바+고정 여백'만큼 아래에서 시작 + 나머지 영역 중앙정렬 */
-      .block-container:has(#hp-landing-sentinel){ padding-top: 0 !important; }
-      div[data-testid='stVerticalBlock']:has(> #hp-landing-sentinel){
-        height: calc(100vh - var(--top-offset) - var(--header-gap));
-        margin-top: var(--header-gap);
-        display: flex; flex-direction: column;
-        align-items: center; justify-content: center;
-      }
-      html, body { overflow: hidden !important; }  /* 스크롤 제거 */
-
-      /* 업로더/버튼 폭 정리 */
-      div[data-testid='stFileUploaderDropzone']{ max-width: 720px; margin: 0 auto; }
-      .stButton > button{ max-width: 720px; margin: 0 auto; display:block; }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # 센티넬: 이 아래의 요소들을 중앙 정렬 대상으로 묶어줌
-    st.markdown("<div id='hp-landing-sentinel'></div>", unsafe_allow_html=True)
-
-    # 중앙 콘텐츠
-    st.markdown("<h1 style='text-align:center; font-weight:900;'>👋 Hi-PolicyLens</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center; color:#334155; font-weight:700;'>PDF에서 핵심 정보를 원문 발췌하고 표/그림/문단으로 보여주는 맞춤형 도우미</p>", unsafe_allow_html=True)
+    st.markdown("<h1 style='font-weight:900;'>👋 Hi-Lens</h1>", unsafe_allow_html=True)
+    st.markdown("PDF에서 표/그림/문단을 추출해 **질문 → 표/그래프/요약**으로 재구성합니다.", unsafe_allow_html=True)
 
     upl = st.file_uploader("분석할 PDF를 업로드하세요", type=["pdf"], key="landing_upl")
-    start = st.button("🔍 분석 시작", use_container_width=True)
-
-    if start:
+    if st.button("🔍 분석 시작", use_container_width=True):
         if not upl:
-            st.warning("먼저 PDF를 업로드해주세요."); st.stop()
-        pdf_bytes = upl.read(); pdf_name = upl.name
+            st.warning("먼저 PDF를 업로드해주세요.")
+            st.stop()
+        pdf_bytes = upl.read()
+        pdf_name = upl.name
         pdf_id = hashlib.sha1(pdf_bytes).hexdigest()[:12]
         tid = f"{pdf_id}-{int(time.time())}"
-        _threads().append({
-            "tid": tid, "pdf_id": pdf_id, "pdf_name": pdf_name,
-            "ts": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "messages": [], "pdf_bytes": pdf_bytes, "chunks": {},
-        })
-        st.session_state["_current_tid"] = tid
-        st.session_state["pdf_bytes"] = pdf_bytes
-        st.session_state["pdf_name"]  = pdf_name
-        st.session_state["route"] = "loading"
+        _threads().append(
+            {
+                "tid": tid,
+                "pdf_id": pdf_id,
+                "pdf_name": pdf_name,
+                "ts": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "messages": [],
+                "pdf_bytes": pdf_bytes,
+                "chunks": {},
+                "summary": "",
+            }
+        )
+        st.session_state.update(
+            {"_current_tid": tid, "pdf_bytes": pdf_bytes, "pdf_name": pdf_name, "route": "loading"}
+        )
         st.rerun()
 
-# ================== 로딩 ==================
+
 def loading_page():
-    st.markdown(f"<style>{get_css()}</style>", unsafe_allow_html=True)
-    render_sidebar()
-
-    # 로딩: 랜딩과 동일하게 --header-gap 적용해서 간격 띄움 + 중앙 정렬 + 스크롤 없음
-    st.markdown("""
-    <style>
-      [data-testid='stChatInput']{ display:none !important; }
-      .block-container:has(#hp-loading-sentinel){ padding-top: 0 !important; }
-      div[data-testid='stVerticalBlock']:has(> #hp-loading-sentinel){
-        height: calc(100vh - var(--top-offset) - var(--header-gap));
-        margin-top: var(--header-gap);
-        display:flex; align-items:center; justify-content:center;
-      }
-      html, body { overflow: hidden !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
-    st.markdown("<div id='hp-loading-sentinel'></div>", unsafe_allow_html=True)
-    st.markdown("<div class='hp-loading-card'>", unsafe_allow_html=True)
-    st.markdown("<div class='title'>⏳ PDF에서 표/그림/텍스트를 추출하고 있습니다...</div>", unsafe_allow_html=True)
+    _init_session_defaults()
+    st.markdown(
+        "<style>section[data-testid='stSidebar']{display:none;} header,footer{display:none;}</style>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("<div style='text-align:center;margin-top:120px;'><h2>Hi-Lens가 분석중입니다...</h2></div>", unsafe_allow_html=True)
+    bar = st.progress(0.0, text="PDF 처리 시작")
 
     pdf_bytes = st.session_state.get("pdf_bytes")
     if not pdf_bytes:
         st.warning("업로드된 PDF가 없습니다.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
-    ph = st.empty()
-    def cb(info):
-        ph.markdown(
-            f"<div class='meter'>p.{info.get('page_label')} | 표={info.get('n_tables')} · 단어={info.get('n_words')} {'· TOC' if info.get('is_toc') else ''}</div>",
-            unsafe_allow_html=True
-        )
-
-    with st.spinner("분석중..."):
-        chunks = build_chunks(pdf_bytes, progress=cb)
+    chunks = build_chunks(pdf_bytes)
+    def _cb(msg, ratio): bar.progress(ratio, text=msg)
+    summary = summarize_from_chunks(chunks, max_pages=20, progress_cb=_cb)
 
     st.session_state["chunks"] = chunks
-    st.session_state.setdefault("chat", [])
-    st.session_state.setdefault("toc_tab", "그림 목차")
-    st.session_state.setdefault("right_open", True)
-
+    st.session_state["summary"] = summary
     th = _current_thread()
-    if th is not None:
-        th["chunks"] = chunks
-        th["pdf_bytes"] = pdf_bytes
+    if th: th.update({"chunks": chunks, "summary": summary})
 
-    st.session_state["route"] = "analysis"
-    st.rerun()
+    st.session_state["route"] = "analysis"; st.rerun()
 
-# ================== 분석 페이지 ==================
+
+# ───────────────────────────────────────────────
+# 분석 페이지
+# ───────────────────────────────────────────────
 def analysis_page():
+    _init_session_defaults()
     st.markdown(f"<style>{get_css()}</style>", unsafe_allow_html=True)
-    st.markdown("<style>html, body { overflow: auto !important; }</style>", unsafe_allow_html=True)  # 스크롤 복원
-
     render_sidebar()
 
-    pdf_bytes = st.session_state.get("pdf_bytes")
-    pdf_name  = st.session_state.get("pdf_name") or "분석 문서"
-    chunks    = st.session_state.get("chunks") or {}
+    pdf_name = st.session_state.get("pdf_name") or "분석 문서"
+    chunks   = st.session_state.get("chunks") or {}
+    summary  = st.session_state.get("summary") or ""
+    _ensure_thread()
 
-    st.session_state.setdefault("toc_tab", "그림 목차")
-    st.session_state.setdefault("right_open", True)
-    st.session_state.setdefault("chat", [])
-
-    main_col, right_col = st.columns([1, 1], gap="large")
-
-    with main_col:
-        st.markdown("<div class='hp-main-sentinel'></div>", unsafe_allow_html=True)
-        _render_header(pdf_name, chunks)
-        _render_chat_panel(pdf_bytes, chunks)
-
-        ask = st.chat_input("무엇이든 물어보세요")
-        if ask:
-            item = _make_item_from_free_query(ask, chunks)
-            st.session_state["chat"].append(item)
-            _ensure_thread(); _append_to_thread(item)
-            st.rerun()
-
-    with right_col:
-        st.markdown("<div class='hp-right-sentinel'></div>", unsafe_allow_html=True)
-        st.markdown("<div class='hp-right-wrap'>", unsafe_allow_html=True)
-
-        if st.button(("📑 목차 패널 접기" if st.session_state["right_open"] else "📑 목차 패널 열기"),
-                     use_container_width=True, key="toggle-right"):
-            st.session_state["right_open"] = not st.session_state["right_open"]
-            st.experimental_rerun()
-
-        if st.session_state["right_open"]:
-            tab = st.radio("보기", ["빠른 태그", "표 목차", "그림 목차"],
-                           index=["빠른 태그","표 목차","그림 목차"].index(st.session_state["toc_tab"]),
-                           horizontal=True, label_visibility="collapsed")
-            st.session_state["toc_tab"] = tab
-
-            q = ""
-            if tab == "표 목차":
-                q = st.text_input("표 검색", key="toc_q_tab", placeholder="예) 가구, 가격, 2023 ...",
-                                  label_visibility="collapsed")
-            elif tab == "그림 목차":
-                q = st.text_input("그림 검색", key="toc_q_fig", placeholder="예) 추이, 비교, 2023 ...",
-                                  label_visibility="collapsed")
-            else:
-                st.caption("추천 질문(문장형)을 클릭하면 바로 질문됩니다.")
-
-            st.markdown("<div class='hp-right-list'>", unsafe_allow_html=True)
-            if tab == "빠른 태그":
-                _right_quick_tags(chunks)
-            elif tab == "표 목차":
-                _right_table_list(chunks, q)
-            else:
-                _right_figure_list(chunks, q)
-            st.markdown("</div>", unsafe_allow_html=True)
-        else:
-            st.caption("오른쪽 목차 패널이 접혀 있습니다.")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-# --------- 헤더 ----------
-def _render_header(pdf_name: str, chunks: Dict[str,Any]):
-    n_t = len(chunks.get("tables", []))
-    n_f = len(chunks.get("figures", []))
-    n_x = len(chunks.get("texts", []))
-    try: w_total = sum(len((p.get("text") or "").split()) for p in chunks.get("texts", []))
-    except Exception: w_total = 0
-    w_k = f"{w_total:,}"
-
+    n_t, n_f, n_x = len(chunks.get("tables", [])), len(chunks.get("figures", [])), len(chunks.get("texts", []))
     st.markdown(
-        f"""
-        <div class="hp-header">
-          <div class="title">📄 {pdf_name}</div>
-          <div class="summary">분석 완료 · 단어수 {w_k} · 텍스트 {n_x} · 표 {n_t} · 그림 {n_f}</div>
-        </div>
-        <div class="hp-top-spacer"></div>
-        """, unsafe_allow_html=True
+        f"<div class='hp-header'><div class='title'>📄 {pdf_name}</div>"
+        f"<div class='summary'>텍스트 {n_x} · 표 {n_t} · 그림 {n_f}</div></div>",
+        unsafe_allow_html=True,
     )
 
-# --------- 오른쪽 패널 콘텐츠 / 채팅 렌더 함수들(기존 그대로) ----------
-def _right_quick_tags(chunks: Dict[str,Any], k:int=18):
-    pages = [{"text": p.get("text","")} for p in chunks.get("texts", [])]
-    tags = generate_query_tags(pages, k=k) or []
-    for i, t in enumerate(tags):
-        label = "#" + re.sub(r"\s+", "", t.split()[0])[:12]
-        if st.button(label, key=f"rqt-{i}", use_container_width=True):
-            ctx = _find_relevant_context(chunks, t)
-            item = {"q": t, "kind":"qa"}
-            if ctx: item.update({"context":ctx["context"], "context_page":ctx["page"]})
-            st.session_state["chat"].append(item)
-            _ensure_thread(); _append_to_thread(item)
-            st.experimental_rerun()
+    tab_chat, tab_toc = st.tabs(["💬 대화", "📑 표·그림 목차"])
 
-def _right_table_list(chunks: Dict[str,Any], q: str):
-    tabs = chunks.get("toc", {}).get("tables", [])
-    for i, t in enumerate(tabs):
-        txt = f"<표 {t['label']}> {t['title']}"
-        if q and (q not in txt): continue
-        if st.button(txt, key=f"rtab-{i}-{t['label']}", use_container_width=True):
-            item = {"q": txt, "kind":"table", "label": t["label"]}
-            st.session_state["chat"].append(item); _ensure_thread(); _append_to_thread(item); st.experimental_rerun()
-
-def _right_figure_list(chunks: Dict[str,Any], q: str):
-    figs = chunks.get("toc", {}).get("figures", [])
-    for i, f in enumerate(figs):
-        txt = f"[그림 {f['label']}] {f['title']}"
-        if q and (q not in txt): continue
-        if st.button(txt, key=f"rfig-{i}-{f['label']}", use_container_width=True):
-            item = {"q": txt, "kind":"figure", "label": f["label"]}
-            st.session_state["chat"].append(item); _ensure_thread(); _append_to_thread(item); st.experimental_rerun()
-
-_IMAGE_MAX = 980
-def _render_chat_panel(pdf_bytes: bytes, chunks: Dict[str,Any]):
-    for item in st.session_state["chat"]:
-        st.markdown("<div class='hp-turn'>", unsafe_allow_html=True)
-        st.markdown(f"<div class='hp-msg me'><div class='bubble'>🙋 { (item.get('q') or '').strip() }</div></div>", unsafe_allow_html=True)
-        kind = item.get("kind")
-        if kind == "table":
-            t = find_table_by_label(chunks, item.get("label"))
-            if not t:
-                st.markdown("<div class='hp-msg'><div class='bubble'>해당 표를 찾지 못했어요.</div></div>", unsafe_allow_html=True)
+    # === 대화 탭 ===
+    with tab_chat:
+        with st.expander("원문 요약", expanded=False):
+            if summary:
+                clean = summary.replace("#### 문서 요약", "").replace("문서 요약", "")
+                lines = [ln.strip() for ln in clean.splitlines() if ln.strip()]
+                st.write("\n".join(lines))  # 🔧 들여쓰기 제거
             else:
-                _render_table_item(t, pdf_bytes)
-        elif kind == "figure":
-            f = find_figure_by_label(chunks, item.get("label"))
-            if not f:
-                st.markdown("<div class='hp-msg'><div class='bubble'>해당 그림을 찾지 못했어요.</div></div>", unsafe_allow_html=True)
+                st.info("요약이 아직 준비되지 않았습니다.")
+
+        with st.expander("추천 질문", expanded=False):
+            recos = QA_RECOMMENDATIONS.get(pdf_name, {})
+            for i, (qid, data) in enumerate(recos.items()):
+                if st.button(data["question"], key=f"recbtn-{i}"):
+                    _append_dialog(user=data["question"], answer=data["answer"])
+                    st.experimental_rerun()
+
+        _render_dialogs("chat", scroll_height=600)
+        _fixed_input("chat")
+
+    # === 표·그림 목차 탭 ===
+    with tab_toc:
+        with st.expander("목차 보기", expanded=False):
+            toc_tab1, toc_tab2 = st.tabs(["표 목차", "그림 목차"])
+            with toc_tab1:
+                _render_toc_buttons(chunks.get("toc", {}).get("tables", []), kind="table", chunks=chunks, cols=10)
+            with toc_tab2:
+                _render_toc_buttons(chunks.get("toc", {}).get("figures", []), kind="figure", chunks=chunks, cols=10)
+
+        _render_dialogs("toc", scroll_height=600)
+        _fixed_input("toc")
+
+
+# ───────────────────────────────────────────────
+# 하단 고정 입력창 (탭별 + LLM 연결)
+# ───────────────────────────────────────────────
+def _fixed_input(which: str):
+    st.markdown(
+        """
+        <style>
+        .fixed-input {
+            position: sticky;
+            bottom: -20px;
+            background: white;
+            padding: 12px 0 6px 0;
+            z-index: 5;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown('<div class="fixed-input">', unsafe_allow_html=True)
+    prompt = "Hi-Lens에게 질문해보세요." if which == "chat" else "이 표/그림에 대해 Hi-Lens에게 질문해보세요."
+    usr_q = st.chat_input(prompt, key=f"inp-{which}")
+
+    if usr_q and usr_q.strip():
+        chunks = st.session_state.get("chunks") or {}
+
+        if which == "chat":
+            # 본문 일부를 모아서 LLM 호출
+            context = "\n".join([x.get("text", "") for x in chunks.get("texts", [])[:3]])[:1500]
+            ans = answer_with_context(usr_q, context, page_label="?")
+            _append_dialog(user=usr_q, answer=ans)
+
+        else:  # toc 탭 → 표 검색 후 LLM 호출
+            rag = RAGIndex()
+            rag.build_from_chunks(chunks)
+            results = rag.search_tables(usr_q, k=2)
+            if results:
+                table_ctxs = [
+                    {"preview_md": r["text"], "page_label": r["page_label"], "title": r.get("title", "")}
+                    for r in results
+                ]
+                ans = explain_tables(usr_q, table_ctxs)
             else:
-                _render_figure_item(f, pdf_bytes)
-        elif kind == "qa":
-            ctx = item.get("context", ""); page = item.get("context_page")
-            with st.spinner("근거 문단으로 답변 생성중..."):
-                ans = answer_with_context(item.get("q",""), ctx)
+                ans = "관련 표를 찾지 못했습니다."
+            _append_dialog(user=usr_q, answer=ans)
+
+        st.experimental_rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# ───────────────────────────────────────────────
+# 대화 렌더링
+# ───────────────────────────────────────────────
+def _append_dialog(user: str, answer: str, item: Optional[Dict] = None):
+    is_toc = bool(item or user.strip().startswith("<표") or user.strip().startswith("<그림"))
+    dialogs = st.session_state.setdefault("toc_dialogs" if is_toc else "chat", [])
+    dialogs.append({"user": user, "answer": answer, "item": item})
+
+
+def _render_dialogs(which: str, scroll_height: int = 600):
+    dialogs = st.session_state.get("toc_dialogs" if which == "toc" else "chat", [])
+    box = st.container(height=scroll_height)
+    with box:
+        for d in dialogs:
+            # 사용자 말풍선
             st.markdown(
-                f"<div class='hp-msg'><div class='bubble'>{ans}</div>" +
-                (f"<div class='sub'>근거: p.{page}</div>" if page else "") + "</div>",
-                unsafe_allow_html=True
+                f"""
+                <div style="display:flex;justify-content:flex-end;margin:6px 0;">
+                    <div style="background:{ACCENT};color:white;
+                                padding:10px 14px;border-radius:14px;max-width:70%;">
+                        {d['user']}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
-        else:
-            st.markdown("<div class='hp-msg'><div class='bubble'>오른쪽 '목차 패널'이나 빠른 태그를 사용해 질문해보세요.</div></div>", unsafe_allow_html=True)
 
-def _render_table_item(t: Dict[str,Any], pdf_bytes: bytes):
-    title = (t.get("title") or t.get("caption") or "").strip(); label = t.get("label") or "?"
-    st.markdown(f"<div class='hp-msg'><div class='bubble'>'&lt;표 {label}&gt; {title}' 표를 찾았습니다. 아래 이미지를 참고하세요.</div></div>", unsafe_allow_html=True)
-    if t.get("bbox") is not None:
-        img = crop_table_image(pdf_bytes, t["page"]-1, t["bbox"], dpi=220); st.image(img, width=_IMAGE_MAX)
-    st.markdown(f"<div class='hp-msg'><div class='sub'>원문 근거: p.{t['page']}</div></div>", unsafe_allow_html=True)
+            # 선택된 표/그림 프리뷰 (중앙 정렬 보장)
+            if d.get("item"):
+                st.markdown("<div style='display:flex;justify-content:center;width:100%;'>", unsafe_allow_html=True)
+                _render_item_preview(d["item"])
+                st.markdown("</div>", unsafe_allow_html=True)
 
-def _render_figure_item(f: Dict[str,Any], pdf_bytes: bytes):
-    title = (f.get("title") or f.get("caption") or "").strip(); label = f.get("label") or "?"
-    st.markdown(f"<div class='hp-msg'><div class='bubble'>'[그림 {label}] {title}' 그림을 찾았습니다. 아래 이미지를 참고하세요.</div></div>", unsafe_allow_html=True)
-    if f.get("bbox") is not None:
-        img = crop_figure_image(pdf_bytes, f["page"]-1, f["bbox"], dpi=220); st.image(img, width=_IMAGE_MAX)
-    st.markdown(f"<div class='hp-msg'><div class='sub'>원문 근거: p.{f['page']}</div></div>", unsafe_allow_html=True)
+            # AI 답변
+            st.markdown("**Hi-Lens의 답변**")
+            formatted = _format_answer(d["answer"])
+            st.markdown(
+                f"""
+                <div style='text-align:left;background:#f8f9fa;
+                            padding:10px 14px;border-radius:14px;
+                            margin:6px 0;white-space:pre-wrap;'>
+                    {formatted}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown("<hr style='margin:12px 0;'>", unsafe_allow_html=True)
 
-def _make_item_from_free_query(q: str, chunks: Dict[str,Any]) -> Dict[str,Any]:
-    tab, fig = _parse_labels(q)
-    if tab:  return {"q": q, "kind":"table", "label": tab}
-    if fig:  return {"q": q, "kind":"figure", "label": fig}
-    ctx = _find_relevant_context(chunks, q)
-    if ctx:  return {"q": q, "kind":"qa", "context": ctx["context"], "context_page": ctx["page"]}
-    return {"q": q, "kind":"none"}
 
-def _parse_labels(q: str) -> Tuple[Optional[str], Optional[str]]:
-    m_tab = re.search(r"[<\\[]?\\s*표\\s*([0-9]+[-–][0-9]+)\\s*[>\\]]?", q)
-    m_fig = re.search(r"[<\\[]?\\s*그림\\s*([0-9]+[-–][0-9]+)\\s*[>\\]]?", q)
-    return (m_tab.group(1).replace("–","-") if m_tab else None,
-            m_fig.group(1).replace("–","-") if m_fig else None)
+# ───────────────────────────────────────────────
+# 목차 버튼 (그리드)
+# ───────────────────────────────────────────────
+def _render_toc_buttons(items: List[Dict[str, Any]], kind: str, chunks: Dict[str, Any], cols: int = 10):
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stButton"] { margin: 0 6px 6px 0 !important; }
+        div[data-testid="stButton"] > button { padding: 6px 12px !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    if not items:
+        st.info("목차가 없습니다.")
+        return
 
-def _find_relevant_context(chunks: Dict[str,Any], q: str) -> Optional[Dict[str,Any]]:
-    texts = chunks.get("texts", []); best, best_s, best_page = "", 0.0, None
-    ql = (q or "").lower()
-    for t in texts:
-        for para in re.split(r"\n{2,}", t.get("text") or ""):
-            s = _score((para or "").lower(), ql)
-            if s > best_s: best_s, best, best_page = s, para, t["page"]
-    if best_page:
-        ctx = " ".join([ln.strip() for ln in best.splitlines() if ln.strip()][:3])
-        return {"context": ctx[:1200], "page": best_page}
+    cols_container = st.columns(cols, gap="small")
+    for i, it in enumerate(items):
+        col = cols_container[i % cols]
+        with col:
+            label = it["label"]
+            text = f"{'표' if kind=='table' else '그림'}<{label}>"
+            if st.button(text, key=f"toc-{kind}-{label}"):
+                q = f"<{'표' if kind=='table' else '그림'} {label}> 설명해줘"
+                if kind == "table":
+                    t = _find_table_full(chunks, label)
+                    ctx = t.get("preview_md") or "" if t else ""
+                    ans = answer_with_context(q, ctx[:1000], page_label=t["page"]) if t else ""
+                    _append_dialog(user=q, answer=ans, item={"kind": "table", "obj": t})
+                else:
+                    f = _find_figure_full(chunks, label)
+                    ctx_text = _neighbor_text(chunks, f["page"]) if f else ""
+                    ans = answer_with_context(q, ctx_text[:1000], page_label=f["page"]) if f else ""
+                    _append_dialog(user=q, answer=ans, item={"kind": "figure", "obj": f})
+                st.experimental_rerun()
+
+        if (i % cols) == (cols - 1) and (i != len(items) - 1):
+            cols_container = st.columns(cols, gap="small")
+
+
+# ───────────────────────────────────────────────
+# 선택 아이템(표/그림) 프리뷰
+# ───────────────────────────────────────────────
+def _render_item_preview(item: Dict[str, Any]):
+    if not item or "obj" not in item:
+        return
+    obj = item["obj"]
+    if not obj:
+        return
+
+    if item["kind"] == "table" and obj.get("bbox") and st.session_state.get("pdf_bytes"):
+        img = crop_table_image(st.session_state["pdf_bytes"], obj["page"] - 1, obj["bbox"], dpi=220)
+        st.image(img, caption=f"<표 {obj['label']}> p.{obj['page']}", use_column_width=False, width=600)
+    elif item["kind"] == "figure" and obj.get("bbox") and st.session_state.get("pdf_bytes"):
+        img = crop_figure_image(st.session_state["pdf_bytes"], obj["page"] - 1, obj["bbox"], dpi=220)
+        st.image(img, caption=f"[그림 {obj['label']}] p.{obj['page']}", use_column_width=False, width=600)
+
+
+# ───────────────────────────────────────────────
+# 답변 포맷
+# ───────────────────────────────────────────────
+def _format_answer(text: str) -> str:
+    if not text:
+        return ""
+    lines: List[str] = []
+    for ln in text.split("* "):
+        if ln.strip():
+            clean = ln.strip().lstrip("*").strip()
+            lines.append("• " + clean)
+    return "\n".join(lines)
+
+
+# ───────────────────────────────────────────────
+# 헬퍼
+# ───────────────────────────────────────────────
+def _find_table_full(chunks: Dict[str, Any], label: str) -> Optional[Dict[str, Any]]:
+    for t in chunks.get("tables", []):
+        if str(t.get("label", "")).strip() == str(label).strip():
+            return t
     return None
 
-def _score(text: str, ql: str) -> float:
-    score = 0.0
-    for w in re.findall(r"[가-힣a-z0-9]+", ql):
-        if len(w) >= 2 and w in text: score += 1.0
-    return score
+
+def _find_figure_full(chunks: Dict[str, Any], label: str) -> Optional[Dict[str, Any]]:
+    for f in chunks.get("figures", []):
+        if str(f.get("label", "")).strip() == str(label).strip():
+            return f
+    return None
+
+
+def _neighbor_text(chunks: Dict[str, Any], page: int) -> str:
+    texts = [x for x in chunks.get("texts", []) if abs(x.get("page", 0) - page) <= 1]
+    return "\n".join([(t.get("text") or "") for t in texts])[:1800]
+
+
+# ───────────────────────────────────────────────
+# 진입점
+# ───────────────────────────────────────────────
+def run():
+    route = st.session_state.get("route", "landing")
+    if route == "landing":
+        landing_page()
+    elif route == "loading":
+        loading_page()
+    else:
+        analysis_page()
