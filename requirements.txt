@@ -18,3 +18,4 @@ rapidfuzz>=3.9.3
 # === OCR 폴백(이미지/스캔 표 대응) ===
 pytesseract>=0.3.10
 opencv-python-headless>=4.9.0.80
+google-generativeai
