@@ -1,0 +1,24 @@
+# === Core ===
+streamlit>=1.36.0
+python-dotenv>=1.0.1
+openai>=1.40.0
+google-generativeai>=0.5.0
+
+# === PDF / Parsing ===
+PyMuPDF>=1.24.5
+pypdf>=4.2.0
+pandas>=2.2.2
+numpy>=1.26.4
+pillow>=10.3.0
+
+# === Viz ===
+matplotlib>=3.8.4
+
+# === Search / Embedding ===
+rapidfuzz>=3.9.3
+rank-bm25>=0.2.2
+sentence-transformers>=2.2.2
+
+# === OCR (이미지/스캔 표 대응) ===
+pytesseract>=0.3.10
+opencv-python-headless>=4.9.0.80
