@@ -15,6 +15,7 @@ from __future__ import annotations
 import time, hashlib, datetime as dt, re
 from typing import Dict, Any, List, Optional
 
+import pandas as pd
 import streamlit as st
 from styles import get_css, ACCENT
 from extract import build_chunks, crop_table_image
@@ -217,27 +218,22 @@ def analysis_page():
     n_t, n_f, n_x = len(chunks.get("tables", [])), len(chunks.get("figures", [])), len(chunks.get("texts", []))
     st.markdown(
         f"<div class='hp-header'><div class='title'>📄 {pdf_name}</div>"
-        f"<div class='summary'>텍스트 {n_x} · 표 {n_t} · 그림 {n_f}</div></div>", unsafe_allow_html=True
+        f"<div class='summary'>텍스트 {n_x} · 표 {n_t} · 그림 {n_f}</div></div>",
+        unsafe_allow_html=True
     )
 
+    # ================== 탭 ==================
     tab_chat, tab_toc = st.tabs(["💬 대화", "📑 표·그림 목차"])
 
-    # ----------------------- 대화 탭 (전체 원문 QA) -----------------------
+    # ----------------------- 대화 탭 -----------------------
     with tab_chat:
-        usr_q = st.chat_input("PDF 원문에 대해 질문해보세요.", key="inp-chat")
-        if usr_q and usr_q.strip():
-            ans, grounds = _qa_pipeline(usr_q, chunks)   # 전체 원문 대상
-            _append_dialog(which="chat", user=usr_q, answer=ans, grounds=grounds)
-            st.rerun()
-
-        # 원문 요약
         with st.expander("원문 요약", expanded=False):
             if summary:
-                st.write(_format_paragraphs(summary, bullets=True))
+                summary_fmt = _format_paragraphs(summary, bullets=True)
+                st.markdown(f"<div class='hp-answer-box1'>{summary_fmt}</div>", unsafe_allow_html=True)
             else:
                 st.info("요약이 아직 준비되지 않았습니다.")
 
-        # 추천 질문
         with st.expander("추천 질문", expanded=False):
             recos = QA_RECOMMENDATIONS.get(pdf_name, {})
             for i, (_, data) in enumerate(recos.items()):
@@ -254,16 +250,15 @@ def analysis_page():
         else:
             _render_dialogs("chat")
 
-    # ------------------- 표·그림 목차 탭 (표/그림 중심 QA) -------------------
-    with tab_toc:
-        # 대화탭과 '완전히 동일한' chat_input UI
-        toc_q = st.chat_input("표·그림에 대해 질문해보세요.", key="inp-toc")
-        if toc_q and toc_q.strip():
-            ans, grounds = _qa_pipeline_tables_only(toc_q, chunks)  # 표/그림 중심
-            _append_dialog(which="toc", user=toc_q, answer=ans, grounds=grounds)
+        # ✅ 이 탭 전용 입력창 (푸터 고정)
+        usr_q = st.chat_input("PDF 원문에 대해 질문해보세요.", key="inp-chat")
+        if usr_q and usr_q.strip():
+            ans, grounds = _qa_pipeline(usr_q, chunks)
+            _append_dialog(which="chat", user=usr_q, answer=ans, grounds=grounds)
             st.rerun()
 
-        # 목차 토글(표/그림 버튼): 기존 기능 유지
+    # ------------------- 표·그림 목차 탭 -------------------
+    with tab_toc:
         with st.expander("목차 보기", expanded=False):
             toc_tab1, toc_tab2 = st.tabs(["표 목차", "그림 목차"])
             with toc_tab1:
@@ -276,19 +271,24 @@ def analysis_page():
         else:
             _render_dialogs("toc")
 
+        # ✅ 이 탭 전용 입력창 (푸터 고정)
+        toc_q = st.chat_input("표·그림에 대해 질문해보세요.", key="inp-toc")
+        if toc_q and toc_q.strip():
+            ans, grounds = _qa_pipeline_tables_only(toc_q, chunks)
+            _append_dialog(which="toc", user=toc_q, answer=ans, grounds=grounds)
+            st.rerun()
+
+
 
 # ============================ QA 파이프라인 ============================
-def _qa_pipeline(query: str, chunks: Dict[str, Any]) -> (str, str):
+def _qa_pipeline(query: str, chunks: Dict[str, Any]) -> (str, list):
     """전체 원문 QA: 표 RAG + 본문 검색 결합"""
     table_parts: List[str] = []
-    grounds_parts: List[str] = []
+    grounds_parts: List[tuple] = []  # (snippet, page)
 
     rag = RAGIndex(); rag.build_from_chunks(chunks)
 
-    # 1) 표/그림 관련 상위
-    table_hits = rag.search_tables(query, k=3)
-    for hit in range(len(table_hits)):
-        pass
+    # 1) 표/그림 관련 상위 (context로만 사용, 근거에는 추가하지 않음)
     table_hits = rag.search_tables(query, k=3)
     for hit in table_hits:
         title = (hit.get("title") or "").strip()
@@ -296,13 +296,14 @@ def _qa_pipeline(query: str, chunks: Dict[str, Any]) -> (str, str):
         prev  = (hit.get("text") or "").strip()
         nb    = _neighbor_text(chunks, hit.get("page_index", 0) + 1)
         table_parts.append(f"(표/그림 p.{pno}) {title}\n{prev}\n{nb}")
-        if nb: grounds_parts.append(nb)
 
-    # 2) 본문 텍스트 검색
+    # 2) 본문 텍스트 검색 (근거는 여기서만 추가)
     text_hits = _search_text_pages(query, chunks, k=3, per_len=1200)
     for h in text_hits:
-        table_parts.append(f"(본문 p.{h['page']})\n{h['snippet']}")
-        grounds_parts.append(h["snippet"])
+        snippet_clean = _cleanup_text_for_grounds(h["snippet"])
+        if snippet_clean:
+            table_parts.append(f"(본문 p.{h['page']})\n{snippet_clean}")
+            grounds_parts.append((snippet_clean, h["page"]))
 
     # 3) 컨텍스트 합성
     ctx = "\n\n---\n\n".join([p for p in table_parts if p]).strip()
@@ -310,14 +311,20 @@ def _qa_pipeline(query: str, chunks: Dict[str, Any]) -> (str, str):
         ctx = "\n".join([(t.get("text") or "") for t in chunks.get("texts", [])[:3]])[:2000]
 
     ans = answer_with_context(query, ctx, page_label=None)
-    grounds = _cleanup_text_for_grounds("\n\n".join(grounds_parts))
-    return ans, grounds
+
+    # ✅ 사용자가 "표" 요청했을 때만 표 변환 실행
+    if "표" in query:
+        table_suggestion = make_table_from_text(ctx)
+        if table_suggestion:
+            ans += "\n\n---\n\n📊 요청하신 내용을 표로 정리하면:\n" + table_suggestion
+
+    return ans, grounds_parts
 
 
-def _qa_pipeline_tables_only(query: str, chunks: Dict[str, Any]) -> (str, str):
+def _qa_pipeline_tables_only(query: str, chunks: Dict[str, Any]) -> (str, list):
     """표/그림 중심 QA: 표/그림 미리보기 + 인접 본문만 사용"""
     table_parts: List[str] = []
-    grounds_parts: List[str] = []
+    grounds_parts: List[tuple] = []  # (snippet, page)
 
     rag = RAGIndex(); rag.build_from_chunks(chunks)
     hits = rag.search_tables(query, k=5)
@@ -327,16 +334,28 @@ def _qa_pipeline_tables_only(query: str, chunks: Dict[str, Any]) -> (str, str):
         prev  = (hit.get("text") or "").strip()
         nb    = _neighbor_text(chunks, hit.get("page_index", 0) + 1)
         table_parts.append(f"(표/그림 p.{pno}) {title}\n{prev}\n{nb}")
-        if nb: grounds_parts.append(nb)
+
+    # 본문 Top3 근거도 수집
+    text_hits = _search_text_pages(query, chunks, k=3, per_len=1200)
+    for h in text_hits:
+        snippet_clean = _cleanup_text_for_grounds(h["snippet"])
+        if snippet_clean:
+            table_parts.append(f"(본문 p.{h['page']})\n{snippet_clean}")
+            grounds_parts.append((snippet_clean, h["page"]))
 
     ctx = "\n\n".join([p for p in table_parts if p]).strip()[:4000]
     if not ctx:
-        # 표/그림이 없으면 최소한의 본문 제공(빈응답 방지)
         ctx = "\n".join([(t.get("text") or "") for t in chunks.get("texts", [])[:2]])[:1500]
 
     ans = answer_with_context(query, ctx, page_label=None)
-    grounds = _cleanup_text_for_grounds("\n\n".join(grounds_parts))
-    return ans, grounds
+
+    # ✅ 사용자가 "표" 요청했을 때만 표 변환 실행
+    if "표" in query:
+        table_suggestion = make_table_from_text(ctx)
+        if table_suggestion:
+            ans += "\n\n---\n\n📊 요청하신 내용을 표로 정리하면:\n" + table_suggestion
+
+    return ans, grounds_parts
 
 
 # ================================ 대화/렌더 ================================
@@ -349,26 +368,60 @@ def _append_dialog(which: str, user: str, answer: str, item: Optional[Dict] = No
 def _render_dialogs(which: str):
     dialogs = st.session_state.get("toc_dialogs" if which == "toc" else "chat", [])
     for d in dialogs:
-        st.markdown(f"<div class='hp-msg user'><div class='bubble'>{d['user']}</div></div>", unsafe_allow_html=True)
+        # 사용자 질문
+        st.markdown("<p style='text-align:center;'> </p>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='hp-msg user'><div class='bubble'>{d['user']}</div></div>",
+            unsafe_allow_html=True
+        )
+        st.markdown("<p style='text-align:center;'> </p>", unsafe_allow_html=True)
         st.markdown("<p style='text-align:center;'> </p>", unsafe_allow_html=True)
         st.markdown("<div class='hp-card__title'>🤔 Hi-Lens의 답변</div>", unsafe_allow_html=True)
 
+        # 표/그림 미리보기 (있으면)
         if d.get("item"):
             _render_item_preview(d["item"])
 
-        # Hi-Lens 답변 (회색 박스 → 단락형)
-        formatted = _format_paragraphs(d["answer"], bullets=False)
-        st.markdown(f"<div class='hp-answer-box'>{formatted}</div>", unsafe_allow_html=True)
+        # 답변 출력
+        formatted = _format_answer(d["answer"]) if d.get("answer") else ""
 
-        # 원문 근거 (번호 매기기)
+        if "|" in formatted and "---" in formatted:
+            # 마크다운 표 감지 시 → Streamlit 표로 변환
+            st.markdown("📊 요청하신 내용을 표로 정리하면:")
+            render_markdown_table(formatted)
+        else:
+            # 일반 텍스트 답변
+            st.markdown(f"<div class='hp-answer-box'>{formatted}</div>", unsafe_allow_html=True)
+
+        # 원문 근거 출력
         if d.get("grounds"):
+            st.markdown("<p style='text-align:center;'> </p>", unsafe_allow_html=True)
             with st.expander("📑 원문 근거 보기", expanded=False):
-                grounds_text = _cleanup_text_for_grounds(d["grounds"])
-                top3 = _select_top_grounds(grounds_text, max_n=3)
-                numbered = []
-                for i, line in enumerate(top3.split("\n"), 1):
-                    numbered.append(f"{i}. {line}")
-                st.markdown("\n".join(numbered))
+                grounds = d["grounds"]
+                blocks = []
+                if isinstance(grounds, list) and all(isinstance(g, tuple) for g in grounds):
+                    for i, (txt, page) in enumerate(grounds[:3], 1):  # 최대 3개
+                        lines = [ln.strip() for ln in txt.split("\n") if ln.strip()]
+                        if len(lines) > 2:
+                            preview = [lines[0], "...(중략)...", lines[-1]]
+                        elif len(lines) == 2:
+                            preview = [lines[0], "...(중략)...", lines[1]]
+                        elif len(lines) == 1:
+                            preview = [lines[0]]
+                        else:
+                            preview = []
+                        block = f"**원문 근거 {i}. (p.{page})**\n" + "\n".join(preview)
+                        blocks.append(block)
+                else:
+                    grounds_text = _cleanup_text_for_grounds(str(grounds))
+                    lines = [ln.strip() for ln in grounds_text.split("\n") if ln.strip()]
+                    if len(lines) > 2:
+                        preview = [lines[0], "...(중략)...", lines[-1]]
+                    else:
+                        preview = lines
+                    blocks.append(f"**원문 근거 1.**\n" + "\n".join(preview))
+
+                st.markdown("\n\n".join(blocks), unsafe_allow_html=True)
 
 
 # ============================ 목차 버튼/프리뷰 ============================
@@ -508,28 +561,57 @@ def _search_text_pages(query: str, chunks: Dict[str, Any], k: int = 3, per_len: 
 
 # ============================== 텍스트 정리 ==============================
 def _format_paragraphs(text: str, bullets: bool = False) -> str:
-    if not text: return ""
-    sents = re.split(r"(?<=[\.!?])\s+(?=[^\s])", text.strip())
-    out = []
-    for s in sents:
-        s = s.strip()
-        if not s: continue
+    """
+    문단/문장 줄바꿈을 강제하고, 기존에 붙어온 불릿(◦ • - · *) 등을 제거한 뒤
+    옵션에 따라 앞에 '◦ '만 붙여 깔끔하게 출력한다.
+    """
+    if not text:
+        return ""
+
+    # 1) <br> 같은 태그가 섞여 오면 개행으로 치환
+    t = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
+
+    # 2) 우선 명시적 개행 기준으로 쪼갬. (없으면 문장부호 기준)
+    raw_parts = [p for p in re.split(r"\n+", t) if p.strip()]
+    if not raw_parts:
+        raw_parts = re.split(r"(?<=[\.!?])\s+(?=[^\s])", t.strip())
+
+    out: List[str] = []
+    for p in raw_parts:
+        s = p.strip()
+        if not s:
+            continue
+        # 3) 앞에 이미 붙어있는 불릿류 제거 (◦ • · * - – 등)
+        s = re.sub(r"^[\u2022•◦\-\–\·\*]+\s*", "", s).strip()
+
+        # 4) 불릿 옵션에 따라 접두어 부착
         out.append(("◦ " + s) if bullets else s)
+
+    # 5) 줄바꿈 유지 (pre-wrap 스타일과 함께 쓰면 원하는 모양)
     return "\n".join(out)
 
 def _cleanup_text_for_grounds(text: str) -> str:
-    if not text: return ""
+    if not text: 
+        return ""
     cleaned: List[str] = []
     for raw in text.split("\n"):
         ln = raw.strip()
-        if not ln: continue
-        if re.search(r"\|.+\|", ln): continue
-        if re.match(r"^\s*[-:|]+\s*$", ln): continue
-        if re.match(r"^\s*(?:<\s*표|[\[\(]?\s*그림)\s*\d", ln): continue
-        if re.match(r"^\s*제?\s*\d+\s*장", ln): continue
-        if re.match(r"^\d{1,2}\s*$", ln): continue
+        if not ln:
+            continue
+        # --- 걸러낼 패턴들 ---
+        if re.search(r"\|.+\|", ln): continue                     # 표 형태 라인
+        if re.match(r"^\s*[-:|]+\s*$", ln): continue              # 구분선
+        if re.match(r"^\s*(?:<\s*표|<\s*그림|표\s*\d|그림\s*\d)", ln): continue  # 표/그림 캡션
+        if re.match(r"^\s*제?\s*\d+\s*장", ln): continue          # 장 제목
+        if re.match(r"^\d{1,2}\s*$", ln): continue                # 숫자 단독
+        if ln.lower() in {"목차", "표 목차", "그림 목차", "contents", "table of contents"}: continue
+        if re.match(r"^[ivxlcdm]+$", ln.lower()): continue        # 로마 숫자
+        if "차트" in ln or "그림" in ln or "표 " in ln: continue  # 목차성 라인
+        if "목차" in ln: continue
+        # --- 실제 내용만 남기기 ---
         cleaned.append(ln)
     return "\n".join(cleaned)
+
 
 def _format_answer(answer: str) -> str:
     """LLM 답변을 1. / ◦ 형식으로 문단 나눔"""
@@ -581,6 +663,107 @@ def _neighbor_text(chunks: Dict[str, Any], page: int) -> str:
     return "\n".join([(t.get("text") or "") for t in texts])[:2500]
 
 
+def render_markdown_table(md_table: str):
+    """
+    마크다운 표 문자열을 Pandas DataFrame으로 변환 후 Streamlit 표로 출력
+    """
+    try:
+        lines = [ln.strip() for ln in md_table.splitlines() if "|" in ln]
+        if not lines:
+            st.markdown(md_table)  # 표가 아니면 그냥 마크다운 출력
+            return
+
+        # 첫 줄 = 헤더, 두 번째 줄 = 구분선, 나머지 = 데이터
+        header = [h.strip() for h in lines[0].split("|") if h.strip()]
+        rows = []
+        for ln in lines[2:]:
+            parts = [p.strip() for p in ln.split("|")]
+            if any(parts):
+                row = [p for p in parts if p != ""]
+                if row:
+                    rows.append(row)
+
+        if not rows:
+            st.markdown(md_table)
+            return
+
+        df = pd.DataFrame(rows, columns=header)
+        st.table(df)  # ✅ 예쁜 Streamlit 표 출력
+    except Exception:
+        st.markdown(md_table)
+
+
+# ================================== 표 변환 보조함수 ==================================
+# 사용자가 "표"라고 요청했을 때(_qa_pipeline/_qa_pipeline_tables_only 내부)만 호출됩니다.
+# - 입력 텍스트(ctx)에 숫자/단위가 충분히 포함되면 LLM에게 "마크다운 표"만 생성하도록 요청
+# - 표로 만들기 애매하면 None을 반환해서 상위 로직이 아무 것도 추가하지 않도록 설계
+from typing import Optional
+
+def make_table_from_text(text: str, max_chars: int = 1800) -> Optional[str]:
+    """
+    본문 텍스트에서 수치 나열을 감지하면, 표(마크다운)로 변환해 주는 보조 함수.
+    - 반환: 마크다운 표 문자열 또는 None
+    - 안전장치:
+        * 숫자/단위 패턴이 충분하지 않으면 None
+        * 너무 긴 입력은 잘라서 프롬프트에 사용
+        * LLM 결과가 표 형태가 아니면 None
+        * 과도하게 긴 표는 줄 수를 제한
+    """
+    if not text:
+        return None
+
+    # 1) "표로 만들 가치가 있는가?" 간단 휴리스틱
+    #    - 숫자/단위 패턴이 하나도 없으면 표 시도 자체를 하지 않음(불필요한 LLM 호출 방지)
+    digit_count = sum(1 for ch in text if ch.isdigit())
+    numeric_patterns = [
+        r"\d{4}\.\d{1,2}",                   # 2021.10 같은 연-월
+        r"\d+(?:,\d{3})+(?:\.\d+)?",         # 12,345.67 같은 천단위+소수
+        r"\d+\.\d+",                         # 3.14 같은 소수
+        r"\d+%",                             # 퍼센트
+        r"\d+\s*(?:원|KRW|만원|억원|조원)",     # 금액/통화
+        r"kWh|kW|MW|GWh|tCO2e|ppm|ppb",      # 단위(에너지/환경)
+    ]
+    looks_numeric = any(re.search(p, text) for p in numeric_patterns)
+    if not (looks_numeric or digit_count >= 10):
+        return None
+
+    # 2) 과도하게 긴 텍스트는 잘라서 사용 (토큰 낭비 방지)
+    src = (text or "")[:max_chars]
+
+    # 3) LLM에 "표만" 생성하도록 명확히 지시 (설명/코드펜스 금지)
+    prompt = (
+        "아래 텍스트의 수치/단위를 표(마크다운)로만 간결하게 정리해줘.\n"
+        "- 마크다운 표만 출력 (설명 문장/코드블록 금지).\n"
+        "- 첫 열은 '항목' 또는 '구분'.\n"
+        "- 값에는 단위(%, 원, kWh 등)를 포함.\n"
+        "- 열은 최대 4개 이내로 요약.\n"
+        "- 행/열 제목은 간결하게.\n"
+        "- 불필요한 주석/출처/문장 추가 금지.\n\n"
+        f"[원문 텍스트]\n{src}"
+    )
+
+    try:
+        # NOTE: llm.explain_tables를 써도 되지만, 현재 파일에서 이미 쓰는 answer_with_context로 통일
+        md = answer_with_context("텍스트를 표로 정리", prompt, page_label=None).strip()
+    except Exception:
+        return None
+
+    # 4) 모델이 가끔 ```로 감싸는 경우 제거
+    md = re.sub(r"^```.*?\n", "", md)
+    md = re.sub(r"\n```$", "", md)
+
+    # 5) 최소한의 마크다운 표 형태 검사
+    #    - 파이프(|)가 없으면 표가 아님
+    if "|" not in md:
+        return None
+
+    # 6) 표가 너무 길면 컷 (UI 보호)
+    lines = [ln.rstrip() for ln in md.splitlines() if ln.strip()]
+    if len(lines) > 50:
+        lines = lines[:50] + ["| ... | ... |", "| (중략) | (중략) |"]
+
+    return "\n".join(lines)
+
 # ============================== 스타일 ==============================
 def _inject_css():
     """공통/로컬 CSS 주입"""
@@ -600,6 +783,12 @@ def _inject_css():
       .hp-card__title {{ font-weight:900; font-size:25px; margin-bottom:10px; }}
       .hp-card__text {{ white-space:pre-wrap; line-height:1.7; font-size:16px; }}
 
+      /* 원문 요약 박스 */
+      .hp-answer-box1 {{
+        background:#ffffff;
+        padding:12px 14px; font-size:16px; line-height:1.7; white-space:pre-wrap;
+      }}
+
       /* 회색 요약 박스 */
       .hp-answer-box {{
         background:#f5f6f8; border:1px solid #e6e8eb; border-radius:12px;
@@ -612,6 +801,18 @@ def _inject_css():
       /* 🔧 질문-답변 사이 여백/흰 박스 제거 */
       .hp-msg.user + div:has(.hp-card) {{ margin-top: 0 !important; }}
       .hp-card:first-child {{ margin-top: 6px; }}
+
+      /* ✅ 채팅 입력창을 화면 하단에 고정 (푸터 스타일) */
+      section[data-testid="stChatInput"] {{
+          position: fixed;
+          bottom: 0;
+          left: 320px;  /* 사이드바 폭 고려 */
+          right: 0;
+          background: white;
+          padding: 10px 16px;
+          border-top: 1px solid #ddd;
+          z-index: 100;
+      }}
     </style>
     """
     st.markdown(f"<style>{base}</style>", unsafe_allow_html=True)
