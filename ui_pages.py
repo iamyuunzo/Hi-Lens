@@ -10,7 +10,7 @@
 #   - 로딩: 스피너/제목/진행바 간격 조정
 #   - 답변/근거/요약: 문장 줄바꿈 + 불릿(◦)
 # -----------------------------------------------------------------------------
-APP_VERSION = "2025-09-26.02"
+APP_VERSION = "2025-09-26.03"
 
 from __future__ import annotations
 import time, hashlib, datetime as dt, re
@@ -209,15 +209,17 @@ def loading_page():
 def analysis_page():
     _init_session_defaults()
 
-    # ✅ 배포 시 캐시 강제 초기화 (버전 차이 안전 처리)
+    # ✅ 캐시 초기화 (Cloud 환경 호환)
     try:
         st.cache_data.clear()
     except Exception:
         pass
-    try:
-        st.cache_resource.clear()
-    except Exception:
-        pass
+    # 일부 환경엔 cache_resource가 없음 → hasattr 체크
+    if hasattr(st, "cache_resource"):
+        try:
+            st.cache_resource.clear()
+        except Exception:
+            pass
 
     _inject_css()
     render_sidebar()
