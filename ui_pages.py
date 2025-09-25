@@ -10,6 +10,7 @@
 #   - 로딩: 스피너/제목/진행바 간격 조정
 #   - 답변/근거/요약: 문장 줄바꿈 + 불릿(◦)
 # -----------------------------------------------------------------------------
+APP_VERSION = "2025-09-26.01"
 
 from __future__ import annotations
 import time, hashlib, datetime as dt, re
@@ -207,6 +208,11 @@ def loading_page():
 
 def analysis_page():
     _init_session_defaults()
+
+    # ✅ 배포할 때마다 캐시 싹 비우기
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    
     _inject_css()
     render_sidebar()
 
