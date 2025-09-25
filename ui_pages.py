@@ -10,9 +10,10 @@
 #   - 로딩: 스피너/제목/진행바 간격 조정
 #   - 답변/근거/요약: 문장 줄바꿈 + 불릿(◦)
 # -----------------------------------------------------------------------------
-APP_VERSION = "2025-09-26.03"
-
 from __future__ import annotations
+
+APP_VERSION = "2025-09-26.04"
+
 import time, hashlib, datetime as dt, re
 from typing import Dict, Any, List, Optional
 
