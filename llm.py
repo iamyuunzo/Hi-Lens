@@ -44,20 +44,23 @@ def _get_api_key() -> Optional[str]:
     return key
 
 
-def _get_model(model_name: str = "gemini-1.5-flash", system_instruction: Optional[str] = None):
+def _get_model(model_name: str = None, system_instruction: Optional[str] = None):
     api_key = _get_api_key()
     if not api_key:
         st.error("❌ GEMINI_API_KEY가 없습니다."); st.stop()
     genai.configure(api_key=api_key)
 
-    # 🔧 안전장치: 잘못된 모델명(-002 등) 들어오면 강제로 올바른 이름으로 교체
+    # ✅ 기본값 강제 적용
+    if not model_name:
+        model_name = "gemini-1.5-flash"
+
+    # ✅ 안전장치: -002 같은 변형 모델명 들어오면 제거
     if model_name.endswith("-002"):
         model_name = model_name.replace("-002", "")
 
     if system_instruction:
         return genai.GenerativeModel(model_name, system_instruction=system_instruction)
     return genai.GenerativeModel(model_name)
-
 
 
 def get_provider_name() -> str:
