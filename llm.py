@@ -1,12 +1,10 @@
-# llm.py — 표/그림 컨텍스트 보강 + (신규) 그림 이미지 직접 요약 지원 (전체 코드)
-
+# llm.py — GPT(OpenAI) 전용 버전
 from __future__ import annotations
 import os
-import io
 from typing import Optional, List, Dict, Any, Union
 
 import streamlit as st
-import google.generativeai as genai
+from openai import OpenAI
 
 try:
     from PIL import Image as PILImage
@@ -22,49 +20,18 @@ __all__ = [
     "explain_figure_image",
 ]
 
-_DIAG_DONE = False
-
-
-def _get_api_key() -> Optional[str]:
-    global _DIAG_DONE
-    key, source = None, None
-    try:
-        for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVEAI_API_KEY"):
-            if name in st.secrets and st.secrets[name]:
-                key = st.secrets[name]; source = f"st.secrets[{name}]"; break
-    except Exception:
-        pass
-    if not key:
-        for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVEAI_API_KEY"):
-            v = os.getenv(name)
-            if v: key, source = v, f"os.getenv('{name}')"; break
-    if not _DIAG_DONE:
-        st.toast(("✅ 키 감지 " + source) if key else "⚠️ 키 미감지", icon="✅" if key else "⚠️")
-        _DIAG_DONE = True
-    return key
-
-
-def _get_model(model_name: str = None, system_instruction: Optional[str] = None):
-    api_key = _get_api_key()
+# -------------------------------------------------------------------
+# 🔑 OpenAI API 키 가져오기
+# -------------------------------------------------------------------
+def _get_openai_client() -> OpenAI:
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        st.error("❌ GEMINI_API_KEY가 없습니다."); st.stop()
-    genai.configure(api_key=api_key)
-
-    # ✅ 기본값 강제 적용
-    if not model_name:
-        model_name = "gemini-1.5-flash"
-
-    # ✅ 안전장치: -002 같은 변형 모델명 들어오면 제거
-    if model_name.endswith("-002"):
-        model_name = model_name.replace("-002", "")
-
-    if system_instruction:
-        return genai.GenerativeModel(model_name, system_instruction=system_instruction)
-    return genai.GenerativeModel(model_name)
+        st.error("❌ OPENAI_API_KEY가 없습니다."); st.stop()
+    return OpenAI(api_key=api_key)
 
 
 def get_provider_name() -> str:
-    return "GEMINI"
+    return "OPENAI"
 
 
 SUMMARIZER_DEFAULT_SYSTEM = (
@@ -72,21 +39,30 @@ SUMMARIZER_DEFAULT_SYSTEM = (
     "명확한 한국어로 핵심을 정리하세요."
 )
 
-
-def llm_chat(system_prompt: str, user_prompt: str, model_name: str = "gemini-1.5-flash") -> str:
-    model = _get_model(model_name, system_instruction=system_prompt)
+# -------------------------------------------------------------------
+# 🔧 공통 LLM 호출 함수
+# -------------------------------------------------------------------
+def llm_chat(system_prompt: str, user_prompt: str, model_name: str = "gpt-4o-mini") -> str:
+    client = _get_openai_client()
     try:
-        resp = model.generate_content(user_prompt)
-        return getattr(resp, "text", "").strip() or "⚠️ 응답이 비어 있습니다."
+        resp = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        return resp.choices[0].message.content.strip()
     except Exception as e:
         return f"⚠️ LLM 호출 중 오류: {e}"
 
 
-# -----------------------------------------------------------------------------  
-# 🔧 수정: answer_with_context → 답변 형식 강화  
-# -----------------------------------------------------------------------------
-def answer_with_context(query: str, context: str, page_label: Optional[str] = None) -> str:
-    model = _get_model()
+# -------------------------------------------------------------------
+# 📄 문맥 기반 답변
+# -------------------------------------------------------------------
+def answer_with_context(query: str, context: str, page_label: Optional[str] = None,
+                        model_name: str = "gpt-4o-mini") -> str:
+    client = _get_openai_client()
     page_note = f"(근거 p.{page_label})" if page_label else ""
     prompt = f"""
 아래 문맥을 바탕으로 질문에 답하세요. {page_note}
@@ -104,14 +80,24 @@ def answer_with_context(query: str, context: str, page_label: Optional[str] = No
 {query}
 """.strip()
     try:
-        resp = model.generate_content(prompt)
-        return getattr(resp, "text", "").strip() or "⚠️ 응답이 비어 있습니다."
+        resp = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": SUMMARIZER_DEFAULT_SYSTEM},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        return resp.choices[0].message.content.strip()
     except Exception as e:
         return f"⚠️ LLM 호출 중 오류: {e}"
 
 
-def explain_tables(query: str, tables_ctxs: List[Dict[str, Any]]) -> str:
-    model = _get_model()
+# -------------------------------------------------------------------
+# 📊 표 설명
+# -------------------------------------------------------------------
+def explain_tables(query: str, tables_ctxs: List[Dict[str, Any]],
+                   model_name: str = "gpt-4o-mini") -> str:
+    client = _get_openai_client()
     parts = []
     for t in tables_ctxs:
         title = (t.get("title") or "").strip()
@@ -138,53 +124,42 @@ def explain_tables(query: str, tables_ctxs: List[Dict[str, Any]]) -> str:
 [컨텍스트]
 {ctx}
 """.strip()
+
     try:
-        resp = model.generate_content(prompt)
-        return getattr(resp, "text", "").strip() or "⚠️ 응답이 비어 있습니다."
+        resp = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": SUMMARIZER_DEFAULT_SYSTEM},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        return resp.choices[0].message.content.strip()
     except Exception as e:
         return f"⚠️ LLM 호출 중 오류: {e}"
 
 
-def _to_pil(image: Union[bytes, "PILImage.Image", Any]) -> Optional["PILImage.Image"]:
-    if PILImage is None:
-        return None
+# -------------------------------------------------------------------
+# 🖼️ 그림 요약
+# -------------------------------------------------------------------
+def explain_figure_image(query: str, image: Union[bytes, "PILImage.Image", Any],
+                         neighbor_text: str = "", model_name: str = "gpt-4o-mini") -> str:
+    client = _get_openai_client()
+    prompt = f"""
+[질문]
+{query}
+
+[참고 본문]
+{(neighbor_text or '')[:1500]}
+""".strip()
     try:
-        if isinstance(image, PILImage.Image): return image
-        if isinstance(image, (bytes, bytearray)): return PILImage.open(io.BytesIO(image))
-        try:
-            import numpy as np
-            if isinstance(image, np.ndarray):
-                if image.ndim == 2: return PILImage.fromarray(image)
-                if image.ndim == 3: return PILImage.fromarray(image.astype("uint8"))
-        except Exception:
-            pass
-    except Exception:
-        return None
-    return None
-
-
-def explain_figure_image(query: str, image: Union[bytes, "PILImage.Image", Any], neighbor_text: str = "") -> str:
-    pil = _to_pil(image)
-    if pil is None:
-        return answer_with_context(
-            query,
-            f"[이미지 미전달/로딩실패] 아래 본문만으로 답하세요.\n{(neighbor_text or '')[:1800]}",
-            page_label=None,
+        resp = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": "당신은 데이터 시각화를 정확히 읽는 분석가입니다."},
+                {"role": "user", "content": prompt},
+            ],
         )
-    system = (
-        "당신은 데이터 시각화를 정확히 읽는 분석가입니다. "
-        "그래프/차트의 제목/축/범례/단위를 해석하고, 핵심 추세·변화·비교만 간결히 설명하세요. "
-        "수치는 중요한 것만, 과도한 나열 금지."
-    )
-    parts = [
-        {"text": f"[질문]\n{query}\n\n[참고 본문]\n{(neighbor_text or '')[:1500]}"},
-        pil,
-    ]
-    try:
-        model = _get_model("gemini-1.5-flash", system_instruction=system)
-        resp = model.generate_content(parts)
-        txt = getattr(resp, "text", "").strip()
-        return txt or "⚠️ 응답이 비어 있습니다."
+        return resp.choices[0].message.content.strip()
     except Exception:
         return answer_with_context(
             query,
