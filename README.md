@@ -1,6 +1,5 @@
 # 🧡 Hi-Lens
-<br><br>
-
+<br>
 <p align="center">
 <img width="600" height="408" alt="image" src="https://github.com/user-attachments/assets/0db8f191-eb0e-44a7-92ce-ddd558b8077b" />
 </p>
@@ -8,6 +7,8 @@
 <div align="center">
 
 **_로컬 AI 메이커스랩 1팀, 현대해상 대체투자2팀의 PDF 요약·발췌·시각화 도우미 'Hi-Lens' 입니다._** <br>
+##### (LLM 요금제로 인해 Streamlit 배포 사이트에서 429 에러가 뜰 수 있습니다.)
+
 <br>
 
 </div>
@@ -44,8 +45,8 @@
 
 | 구분 | 사용 기술 |
 |------|-----------|
-| **Front-end / UI** | Streamlit |
-| **Back-end / Logic** | Python |
+| **Front-end / UI** | Google Apps Script (GAS) -> **Streamlit** |
+| **Back-end / Logic** | HTML, CSS, JS -> **Python** |
 | **AI / LLM** | OpenAI GPT, Pontens. AI, Google Gemini (API 키 교체 가능) |
 | **PDF 처리** | PyMuPDF (표/그림 bbox 탐지 및 크롭), pypdf (페이지 텍스트 추출) |
 | **검색 / RAG** | rank-bm25 (BM25 검색), sentence-transformers (+torch, 선택, 임베딩 검색) |
