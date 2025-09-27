@@ -45,8 +45,8 @@
 
 | 구분 | 사용 기술 |
 |------|-----------|
-| **Front-end / UI** | Google Apps Script (GAS) -> **Streamlit** |
-| **Back-end / Logic** | HTML, CSS, JS -> **Python** |
+| **UI** | Google Apps Script (GAS) -> **Streamlit** |
+| **Front-end, Back-end** | HTML, CSS, JS -> **Python** |
 | **AI / LLM** | OpenAI GPT, Pontens. AI, Google Gemini (API 키 교체 가능) |
 | **PDF 처리** | PyMuPDF (표/그림 bbox 탐지 및 크롭), pypdf (페이지 텍스트 추출) |
 | **검색 / RAG** | rank-bm25 (BM25 검색), sentence-transformers (+torch, 선택, 임베딩 검색) |
