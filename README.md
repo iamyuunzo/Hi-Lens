@@ -27,7 +27,7 @@
 
 <br>
 
-## 💁🏻 Team
+## 💁🏻 Team 
 | <img src="https://i.pinimg.com/736x/19/1d/fc/191dfcfe09061160dc7d842a21e3d3f0.jpg" width="280"/> | <img src="https://i.pinimg.com/1200x/e8/af/93/e8af9320376ef490e1c8eeb76930857e.jpg" width="250"/> | <img src="https://i.pinimg.com/736x/3b/53/af/3b53af1d90e9fb9077844e9f273ba99f.jpg" width="250"/> | <img src="https://i.pinimg.com/736x/2b/f0/7c/2bf07cb51234173ebfc5e5bde1bba73f.jpg" width="250"/> |
 |:--------------------------------------:|:---------------------------------------:|:------------------------------------:|:------------------------------------:|
 | [**조윤주**](https://github.com/iamyuunzo) | [**남희수**](https://github.com/msu1603-web)| [**류채민**](https://github.com/ryunnwave) | [**소재만**](https://github.com/chssdk-web) |
